@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2d6a4f"><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png">
+<title>Pantry</title>
+<style>
+:root{--bg:#f6f7f4;--fg:#1c1d1a;--mut:#666a62;--card:#fff;--bd:#d9dcd3;--ac:#2d6a4f;--acf:#fff;--low:#c2410c;--lowbg:#fff0e6;--okbg:#e8f4ec;color-scheme:light;box-sizing:border-box}
+@media(prefers-color-scheme:dark){:root{--bg:#131412;--fg:#ecede8;--mut:#9a9e94;--card:#1f211e;--bd:#383b36;--ac:#6fcf97;--acf:#10130f;--low:#f59e6b;--lowbg:#33251c;--okbg:#1a2a21;color-scheme:dark}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.4 system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
+header{position:sticky;top:0;background:var(--bg);padding:calc(env(safe-area-inset-top,0px) + 10px) 14px 6px;z-index:5}h1{font-size:20px;margin:0}
+main{max-width:720px;margin:0 auto;padding:6px 12px 96px}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);border-top:1px solid var(--bd);padding-bottom:env(safe-area-inset-bottom,0px);z-index:6}
+nav button{flex:1;border:0;background:none;padding:12px 4px;font:inherit;font-size:14px;color:var(--mut)}nav button.on{color:var(--ac);font-weight:700}
+.m{color:var(--mut);font-size:14px}.w{color:var(--low);font-size:14px}
+.pills{display:flex;gap:8px;overflow-x:auto;padding:4px 0 8px}.pill{flex:none;padding:10px 16px;border-radius:99px;border:1px solid var(--bd);background:var(--card);color:var(--fg);font:inherit}.pill.on{background:var(--ac);color:var(--acf);border-color:var(--ac);font-weight:600}
+.bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 10px}.bar b{flex:1;min-width:120px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:12px;margin:8px 0}.card.low{background:var(--lowbg)}.card.ok{background:var(--okbg)}
+.nm{font-weight:600;margin-bottom:2px}.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{min-width:44px;height:44px;border-radius:12px;border:1px solid var(--bd);background:var(--card);color:var(--fg);font:inherit;font-size:17px}
+.chip.sel{background:var(--ac);color:var(--acf);border-color:var(--ac);font-weight:700}.chip.sel.low{background:var(--low);border-color:var(--low);color:#fff}
+button,input,textarea{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px 12px}button{cursor:pointer}
+button.pri{background:var(--ac);color:var(--acf);border-color:var(--ac)}input[type=search],input[type=text]{width:100%}textarea{width:100%;min-height:110px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}.row>input{flex:1;min-width:120px}
+.tick{display:flex;gap:12px;align-items:center}.tick input{width:28px;height:28px;flex:none}.done .nm{text-decoration:line-through;opacity:.5}
+</style></head><body>
+<header><h1 id="ttl">Pantry</h1></header><main id="app"></main><nav id="nav"></nav>
+<script>
+const KEY='pantry_v1',D0=()=>({areas:[],groups:{},targets:{},counts:{},checked:{},sug:{}});
+let DB=D0(),tab='count',CUR='',EDIT=false,Q='',MSG='';
+try{const x=localStorage.getItem(KEY);if(x)DB=Object.assign(D0(),JSON.parse(x))}catch(e){}
+if(!DB.areas.length)DB.areas=['Fridge','Freezer','Pantry'].map((n,i)=>({id:'a'+(i+1),name:n}));
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(DB))}catch(e){}};
+const $=(t,a,...k)=>{const e=document.createElement(t);Object.assign(e,a||{});k.flat().forEach(c=>e.append(c));return e};
+const med=a=>{a=[...a].sort((x,y)=>x-y);const m=a.length>>1;return a.length%2?a[m]:(a[m-1]+a[m])/2};
+const tg=(a,g)=>(DB.targets[a]||{})[g]||0,cn=(a,g)=>(DB.counts[a]||{})[g]||null;
+const total=g=>DB.areas.reduce((s,a)=>s+tg(a.id,g),0),haveSum=g=>DB.areas.reduce((s,a)=>{const c=cn(a.id,g);return s+(c?c.n:0)},0);
+const unc=g=>DB.areas.filter(a=>tg(a.id,g)>0&&!cn(a.id,g)),need=g=>Math.max(0,total(g)-haveSum(g));
+const ago=t=>{const d=Math.floor((Date.now()-t)/864e5);return d<1?'today':d===1?'yesterday':d+' days ago'};
+function setT(a,g,n){(DB.targets[a]=DB.targets[a]||{})[g]=n;if(!n)delete DB.targets[a][g];save()}
+function setC(a,g,n){(DB.counts[a]=DB.counts[a]||{})[g]={n,at:Date.now()};save()}
+const cur=()=>DB.areas.find(x=>x.id===CUR)||DB.areas[0];
+const items=a=>Object.keys(DB.groups).filter(g=>tg(a.id,g)>0).sort((x,y)=>x.localeCompare(y));
+function suggestFrom(t){const rows=[];let par={};
+ t.split('\n').forEach(l=>{if(l.startsWith('#par ')){try{par=JSON.parse(l.slice(5))}catch(e){}return}if(l[0]==='#')return;const c=l.split('\t');if(c.length>=7&&c[6])rows.push({d:c[1],q:+c[3]||1,t:c[6]})});
+ const ds=[...new Set(rows.map(r=>r.d).filter(Boolean))].sort(),T={};let st=null,pv=null;
+ ds.forEach(d=>{if(pv&&(new Date(d)-new Date(pv))/864e5<=3)T[d]=st;else{st=d;T[d]=d}pv=d});
+ const key=r=>r.d?T[r.d]:'?',all=new Set(rows.map(key)),real=[...all].filter(x=>x!=='?').sort(),
+  gap=real.length>1?(new Date(real[real.length-1])-new Date(real[0]))/864e5/(real.length-1):14,
+  wk=ds.length?Math.max(1,(new Date(ds[ds.length-1])-new Date(ds[0]))/6048e5):1,g={};
+ rows.forEach(r=>{const x=g[r.t]=g[r.t]||{};x[key(r)]=(x[key(r)]||0)+r.q});
+ const out={};Object.entries(g).forEach(([t,tr])=>{const q=Object.values(tr),m=med(q),w=q.reduce((a,x)=>a+Math.min(x,2*m),0)/wk,p=Math.max(1,Math.ceil(w*gap/7-1e-9)),u=par[t]!==undefined&&par[t]!=='';
+  if(q.length>=3||u)out[t]=u?+par[t]:p});return out}
+function doImport(t){t=t.trim();if(!t)return'Nothing to import.';
+ if(t[0]==='{'){try{const j=JSON.parse(t);if(j.areas&&j.groups){DB=Object.assign(D0(),j);save();return'Backup restored.'}}catch(e){return'That backup could not be read.'}}
+ if(t.includes('\t')){const s=suggestFrom(t);let n=0;Object.entries(s).forEach(([g,p])=>{if(!DB.groups[g]){DB.groups[g]={};n++}DB.sug[g]=p});save();
+  return'Imported '+Object.keys(s).length+' items ('+n+' new) with suggested totals. Place them in areas with Count, then Edit items.'}
+ return'Not recognised. Paste the compact export from the previous app, or a backup from this one.'}
+function listRows(){return Object.keys(DB.groups).filter(g=>total(g)>0&&need(g)>0).sort((x,y)=>x.localeCompare(y))}
+function cRow(a,g){const T=tg(a.id,g),c=cn(a.id,g),n=c?c.n:null,st=n==null?'':n<T?'low':'ok',mx=Math.min(12,Math.max(T+2,5));
+ const r=$('div',{className:'card '+st},$('div',{className:'nm',textContent:g}),$('div',{className:'m',textContent:'wanted '+T+' \u00b7 '+(c?'counted '+ago(c.at):'not counted yet')}),
+  $('div',{className:'chips'},Array.from({length:mx+1},(_,i)=>$('button',{className:'chip'+(n===i?' sel'+(st==='low'?' low':''):''),textContent:i,onclick:()=>{setC(a.id,g,i);r.replaceWith(cRow(a,g));prog()}})),n>mx?$('button',{className:'chip sel',textContent:n}):''));return r}
+function prog(){const a=cur(),it=items(a),e=document.getElementById('prog');if(e)e.textContent=a.name+': '+it.filter(g=>cn(a.id,g)).length+' of '+it.length+' counted'}
+function eRow(a,g){const t=tg(a.id,g),s=DB.sug[g],r=$('div',{className:'card'},$('div',{className:'nm',textContent:g}),
+  $('div',{className:'m',textContent:'here: '+t+' \u00b7 all areas: '+total(g)+(s?' \u00b7 suggested total '+s:'')}),
+  $('div',{className:'chips'},Array.from({length:11},(_,i)=>$('button',{className:'chip'+(t===i?' sel':''),textContent:i,onclick:()=>{setT(a.id,g,i);r.replaceWith(eRow(a,g))}}))));return r}
+function vCount(){const v=$('div'),a=cur();
+ v.append($('div',{className:'pills'},DB.areas.map(x=>$('button',{className:'pill'+(x===a?' on':''),textContent:x.name,onclick:()=>{CUR=x.id;EDIT=false;draw()}}))));
+ if(!a)return v;const its=items(a);
+ if(EDIT){const box=$('div'),inp=$('input',{type:'search',placeholder:'Search items\u2026',value:Q,oninput:e=>{Q=e.target.value;fill()}}),nw=$('input',{type:'text',placeholder:'New item name'});
+  const fill=()=>{const q=Q.toLowerCase(),gs=Object.keys(DB.groups).filter(g=>!q||g.toLowerCase().includes(q)).sort((x,y)=>((!total(x)&&DB.sug[x]?0:1)-(!total(y)&&DB.sug[y]?0:1))||x.localeCompare(y));box.replaceChildren(...gs.map(g=>eRow(a,g)))};
+  v.append($('div',{className:'bar'},$('b',{textContent:'Choose what lives in '+a.name}),$('button',{className:'pri',textContent:'Done',onclick:()=>{EDIT=false;Q='';draw()}})),
+   $('p',{className:'m',textContent:'Tap a number for how many you want to keep in this area. Items with a suggested total from your orders come first.'}),inp,
+   $('div',{className:'row'},nw,$('button',{textContent:'Add item',onclick:()=>{const n=nw.value.trim();if(!n)return;if(!DB.groups[n])DB.groups[n]={};setT(a.id,n,1);nw.value='';fill()}})),box);fill();return v}
+ v.append($('div',{className:'bar'},$('b',{id:'prog'}),$('button',{textContent:'Edit items',onclick:()=>{EDIT=true;draw()}}),
+  its.length?$('button',{textContent:'All good',onclick:()=>{if(confirm('Mark every item in '+a.name+' as fully stocked?')){its.forEach(g=>setC(a.id,g,tg(a.id,g)));draw()}}}):''));
+ if(!its.length)v.append($('p',{className:'m',textContent:'Nothing here yet. Tap Edit items to choose what lives in '+a.name+'.'}));
+ its.forEach(g=>v.append(cRow(a,g)));setTimeout(prog);return v}
+function vList(){const v=$('div'),rows=listRows(),pending=Object.keys(DB.groups).filter(g=>!total(g)&&DB.sug[g]).length;
+ let nc=0;Object.keys(DB.groups).forEach(g=>{nc+=unc(g).length});
+ v.append($('div',{className:'bar'},$('b',{textContent:rows.length+' item'+(rows.length===1?'':'s')+' to buy'}),
+  $('button',{textContent:'Copy list',onclick:()=>{const t=rows.filter(g=>!DB.checked[g]).map(g=>need(g)+' x '+g).join('\n');try{navigator.clipboard.writeText(t)}catch(e){}}}),
+  $('button',{textContent:'Clear ticks',onclick:()=>{DB.checked={};save();draw()}})));
+ if(nc)v.append($('p',{className:'w',textContent:nc+' item slot'+(nc===1?'':'s')+' not counted yet, so this list may be longer than needed. Count them in the Count tab.'}));
+ if(pending)v.append($('p',{className:'m',textContent:pending+' imported item'+(pending===1?'':'s')+' not placed in any area yet (Count, then Edit items).'}));
+ rows.forEach(g=>{const u=unc(g),ck=!!DB.checked[g];v.append($('div',{className:'card tick'+(ck?' done':'')},$('input',{type:'checkbox',checked:ck,onchange:e=>{DB.checked[g]=e.target.checked;if(!e.target.checked)delete DB.checked[g];save();draw()}}),
+  $('div',{},$('div',{className:'nm',textContent:need(g)+' \u00d7 '+g}),$('div',{className:'m',textContent:'wanted '+total(g)+' \u00b7 have '+haveSum(g)+(u.length?' \u00b7 not counted in '+u.map(x=>x.name).join(', '):'')}))))});
+ if(!rows.length)v.append($('p',{className:'m',textContent:'Nothing to buy. Place items in areas and count them first.'}));return v}
+function vFind(){const v=$('div'),box=$('div'),inp=$('input',{type:'search',placeholder:'Search: where is it, how many?',value:Q,oninput:e=>{Q=e.target.value;fill()}});
+ const fill=()=>{const q=Q.toLowerCase(),gs=Object.keys(DB.groups).filter(g=>q&&g.toLowerCase().includes(q)).sort();
+  box.replaceChildren(...(q?gs.map(g=>$('div',{className:'card'},$('div',{className:'nm',textContent:g}),
+   $('div',{className:'m',textContent:DB.areas.filter(a=>tg(a.id,g)||cn(a.id,g)).map(a=>{const c=cn(a.id,g);return a.name+': '+(c?c.n:'?')+' of '+tg(a.id,g)+(c?' ('+ago(c.at)+')':'')}).join(' \u00b7 ')||'Not placed in any area'}),
+   $('div',{className:'m',textContent:'Total wanted '+total(g)+', counted '+haveSum(g)}))):[$('p',{className:'m',textContent:'Type a name to search.'})]))};
+ v.append(inp,box);fill();return v}
+function vSetup(){const v=$('div'),ia=$('input',{type:'text',placeholder:'New area, e.g. Garage freezer'}),ta=$('textarea',{placeholder:'Paste the compact export from the previous app, or a backup from this one'}),bk=$('textarea',{readOnly:true,value:JSON.stringify(DB)});
+ v.append($('h3',{textContent:'Areas'}),...DB.areas.map((a,i)=>$('div',{className:'row'},$('input',{type:'text',value:a.name,onchange:e=>{a.name=e.target.value.trim()||a.name;save()}}),
+   $('button',{textContent:'\u2191',onclick:()=>{if(i){DB.areas.splice(i-1,0,DB.areas.splice(i,1)[0]);save();draw()}}}),$('button',{textContent:'\u2193',onclick:()=>{if(i<DB.areas.length-1){DB.areas.splice(i+1,0,DB.areas.splice(i,1)[0]);save();draw()}}}),
+   $('button',{textContent:'Delete',onclick:()=>{if(confirm('Delete '+a.name+' and its counts?')){DB.areas.splice(i,1);delete DB.targets[a.id];delete DB.counts[a.id];save();draw()}}}))),
+  $('div',{className:'row'},ia,$('button',{className:'pri',textContent:'Add area',onclick:()=>{const n=ia.value.trim();if(n){DB.areas.push({id:'a'+Date.now(),name:n});save();draw()}}})),
+  $('h3',{textContent:'Import'}),ta,$('div',{className:'row'},$('button',{className:'pri',textContent:'Import',onclick:()=>{MSG=doImport(ta.value);draw()}}),$('span',{className:'m',textContent:MSG||Object.keys(DB.groups).length+' items stored.'})),
+  $('h3',{textContent:'Backup'}),$('p',{className:'m',textContent:'Everything is stored on this device only. Copy this text somewhere safe, or save it as a file. Paste it in the box above to restore.'}),bk,
+  $('div',{className:'row'},$('button',{textContent:'Copy',onclick:()=>{bk.select();try{navigator.clipboard.writeText(bk.value)}catch(e){}}}),
+   $('button',{textContent:'Save as file',onclick:()=>{const a=$('a',{href:URL.createObjectURL(new Blob([bk.value],{type:'application/json'})),download:'pantry-backup-'+new Date().toISOString().slice(0,10)+'.json'});a.click()}}),
+   $('button',{textContent:'Erase everything',onclick:()=>{if(confirm('Erase all areas, items and counts on this device?')){DB=D0();DB.areas=[{id:'a1',name:'Fridge'}];save();draw()}}})));return v}
+function draw(){const tabs=[['count','Count'],['list','List'],['find','Find'],['setup','Setup']];
+ document.getElementById('nav').replaceChildren(...tabs.map(([k,l])=>$('button',{textContent:l,className:tab===k?'on':'',onclick:()=>{tab=k;Q='';EDIT=false;draw()}})));
+ document.getElementById('ttl').textContent={count:'Count',list:'Shopping list',find:'Find',setup:'Setup'}[tab];
+ document.getElementById('app').replaceChildren(({count:vCount,list:vList,find:vFind,setup:vSetup})[tab]())}
+draw();if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script></body></html>
