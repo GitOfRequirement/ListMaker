@@ -29,7 +29,7 @@ const KEY='pantry_v1',D0=()=>({areas:[],groups:{},targets:{},counts:{},checked:{
 let DB=D0(),tab='count',CUR='',EDIT=false,Q='',MSG='';
 try{const x=localStorage.getItem(KEY);if(x)DB=Object.assign(D0(),JSON.parse(x))}catch(e){}
 if(!DB.areas.length)DB.areas=['Fridge','Freezer','Pantry'].map((n,i)=>({id:'a'+(i+1),name:n}));
-const save=()=>{DB.ts=Date.now();try{localStorage.setItem(KEY,JSON.stringify(DB))}catch(e){}push()};
+const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(DB))}catch(e){}},save=()=>{DB.ts=Date.now();persist();push()};
 const $=(t,a,...k)=>{const e=document.createElement(t);Object.assign(e,a||{});k.flat().forEach(c=>e.append(c));return e};
 const med=a=>{a=[...a].sort((x,y)=>x-y);const m=a.length>>1;return a.length%2?a[m]:(a[m-1]+a[m])/2};
 const tg=(a,g)=>(DB.targets[a]||{})[g]||0,cn=(a,g)=>(DB.counts[a]||{})[g]||null;
@@ -138,31 +138,44 @@ function vScan(){const v=$('div'),box=$('div'),res=$('div'),list=$('div'),inp=$(
   box,$('div',{className:'row'},inp,$('button',{textContent:'Look up',onclick:()=>open(inp.value)})),res,
   $('input',{type:'search',placeholder:'Search saved products\u2026',value:Q,oninput:e=>{Q=e.target.value;fillList()}}),list);fillList();return v}
 const SY=()=>{try{return JSON.parse(localStorage.getItem('pantry_sync')||'{}')}catch(e){return{}}},SYset=o=>{try{localStorage.setItem('pantry_sync',JSON.stringify(Object.assign(SY(),o)))}catch(e){}};
-let FB=null,SYMSG='',PT=null;
+let FB=null,SYMSG='',PT=null,CONFLICT=false;
+const isEmpty=()=>!Object.keys(DB.groups).length&&!Object.keys(DB.products).length&&!Object.values(DB.targets).some(t=>Object.keys(t).length)&&!Object.values(DB.counts).some(t=>Object.keys(t).length);
 const sm=()=>'Synced '+new Date().toLocaleTimeString()+' \u00b7 '+Object.keys(DB.groups).length+' items, '+DB.areas.length+' areas, '+Object.keys(DB.products).length+' products';
 const parseCfg=t=>{const o={};for(const m of t.matchAll(/(\w+)\s*:\s*["']([^"']*)["']/g))o[m[1]]=m[2];return o};
 async function fbInit(c){if(FB)return FB;const B='https://www.gstatic.com/firebasejs/10.14.1/',[A,Au,Fs]=await Promise.all([import(B+'firebase-app.js'),import(B+'firebase-auth.js'),import(B+'firebase-firestore.js')]);
  const app=A.initializeApp(c);FB={Au,Fs,auth:Au.getAuth(app),db:Fs.getFirestore(app)};
  Au.onAuthStateChanged(FB.auth,u=>{if(u)watch(u);else{if(FB.un)FB.un();FB.ref=null}if(tab==='setup')draw()});return FB}
-function watch(u){FB.ref=FB.Fs.doc(FB.db,'users',u.uid);if(FB.un)FB.un();
- FB.un=FB.Fs.onSnapshot(FB.ref,s=>{const d=s.exists()?s.data():null;if(!d){push(true);return}
-  let rg=0;try{rg=Object.keys(JSON.parse(d.data).groups||{}).length}catch(e){}
-  if(d.ts>DB.ts||(rg>0&&!Object.keys(DB.groups).length)){try{DB=Object.assign(D0(),JSON.parse(d.data));DB.ts=d.ts;try{localStorage.setItem(KEY,JSON.stringify(DB))}catch(e){}SYMSG=sm();if(!document.activeElement||document.activeElement.tagName!=='INPUT')draw()}catch(e){}}
-  else if(d.ts<DB.ts)push(true)},e=>{SYMSG='Sync error: '+(e.code||e.message)})}
-function push(now){if(!FB||!FB.ref)return;clearTimeout(PT);PT=setTimeout(()=>{FB.Fs.setDoc(FB.ref,{data:JSON.stringify(DB),ts:DB.ts}).then(()=>{SYMSG=sm()}).catch(e=>{SYMSG='Sync error: '+(e.code||e.message)})},now?0:800)}
-function syncUI(){const S=SY(),cfg=$('textarea',{placeholder:'Paste your Firebase config here',value:S.cfg||''}),em=$('input',{type:'text',placeholder:'Email',value:S.email||'',autocapitalize:'none'}),pw=$('input',{type:'password',placeholder:'Password'});
+function decide(d,L){if(!d)return L.empty?'none':'push';if(d.ts===L.ts)return'ignore';if(d.ts===L.base)return L.ts>L.base?'push':'ignore';return(L.ts<=L.base||L.empty)?'pull':'conflict'}
+function applyCloud(d){try{DB=Object.assign(D0(),JSON.parse(d.data));DB.ts=d.ts;DB.base=d.ts;persist();CONFLICT=false;SYMSG=sm();if(!document.activeElement||document.activeElement.tagName!=='INPUT')draw()}catch(e){SYMSG='Sync error: '+e.message}}
+function watch(u){FB.uid=u.uid;FB.ref=FB.Fs.doc(FB.db,'users',u.uid);if(FB.un)FB.un();
+ FB.un=FB.Fs.onSnapshot(FB.ref,s=>{const d=s.exists()?s.data():null;if(d)FB.last=d.ts;const a=decide(d,{ts:DB.ts,base:DB.base||0,empty:isEmpty()});
+  if(a==='push')push(true);else if(a==='pull')applyCloud(d);else if(a==='conflict'){CONFLICT=true;SYMSG='Conflict: this device and the cloud both changed.';draw()}
+  else if(d&&d.ts===DB.ts&&DB.base!==DB.ts){DB.base=DB.ts;persist()}},e=>{SYMSG='Sync error: '+(e.code||e.message)})}
+function push(now,force){if(!FB||!FB.ref||(CONFLICT&&!force))return;clearTimeout(PT);PT=setTimeout(()=>{const my=DB.ts,snap=JSON.stringify(DB);
+  FB.Fs.runTransaction(FB.db,async tx=>{const sn=await tx.get(FB.ref),o=sn.exists()?sn.data():null;if(o&&!force&&o.ts!==(DB.base||0))throw{code:'conflict'};
+   let arch=o?o.arch||0:0;if(o&&(force||o.ts-arch>6e5)){tx.set(FB.Fs.doc(FB.db,'users',FB.uid,'history',String(o.ts)),{data:o.data,ts:o.ts});arch=o.ts}
+   tx.set(FB.ref,{data:snap,ts:my,arch})}).then(()=>{DB.base=my;persist();SYMSG=sm();if(tab==='setup')draw()})
+   .catch(e=>{if(e.code==='conflict'){CONFLICT=true;SYMSG='Conflict: the cloud changed since this device last synced.'}else SYMSG='Sync error: '+(e.code||e.message);draw()})},now?0:800)}
+addEventListener('online',()=>{if(FB&&DB.ts>(DB.base||0))push(true)});
+function banner(){if(!CONFLICT||!FB||!FB.ref)return'';return $('div',{className:'card low'},$('div',{className:'nm',textContent:'Sync conflict: nothing was overwritten'}),
+  $('div',{className:'m',textContent:'This device and the cloud both changed since they last matched. Choose which copy to keep. Keeping this device\u2019s copy saves the cloud copy under Previous versions (Setup).'}),
+  $('div',{className:'row'},$('button',{textContent:'Use the cloud copy',onclick:async()=>{if(!confirm('Replace this device\u2019s data with the cloud copy? This device\u2019s unsynced changes will be lost.'))return;try{const sn=await FB.Fs.getDoc(FB.ref);try{localStorage.setItem('pantry_discarded',JSON.stringify(DB))}catch(e){}applyCloud(sn.data())}catch(e){SYMSG='Sync error: '+(e.code||e.message);draw()}}}),
+   $('button',{className:'pri',textContent:'Keep this device\u2019s copy',onclick:()=>{if(confirm('Replace the cloud copy with this device\u2019s data?')){CONFLICT=false;push(true,true)}}})))}
+function syncUI(){const S=SY(),cfg=$('textarea',{placeholder:'Paste your Firebase config here',value:S.cfg||''}),em=$('input',{type:'text',placeholder:'Email',value:S.email||'',autocapitalize:'none'}),pw=$('input',{type:'password',placeholder:'Password'}),hist=$('div');
  const go=async create=>{try{const c=parseCfg(cfg.value);if(!c.apiKey||!c.projectId)throw new Error('The config looks incomplete.');SYset({cfg:cfg.value,email:em.value.trim()});const f=await fbInit(c);
    await(create?f.Au.createUserWithEmailAndPassword:f.Au.signInWithEmailAndPassword)(f.auth,em.value.trim(),pw.value);SYMSG='Signed in.'}catch(e){SYMSG='Sync error: '+(e.code||e.message)}draw()};
+ const loadHist=async()=>{try{if(!FB||!FB.ref)throw new Error('Sign in first.');const F=FB.Fs,sn=await F.getDocs(F.query(F.collection(FB.db,'users',FB.uid,'history'),F.orderBy('ts','desc'),F.limit(20)));
+  hist.replaceChildren(...(sn.empty?[$('p',{className:'m',textContent:'No previous versions saved yet.'})]:sn.docs.map(x=>{const h=x.data();let g=0;try{g=Object.keys(JSON.parse(h.data).groups||{}).length}catch(e){}
+   return $('div',{className:'row'},$('span',{textContent:new Date(h.ts).toLocaleString()+' \u00b7 '+g+' items'}),$('button',{textContent:'Restore',onclick:()=>{if(!confirm('Restore this version? The current cloud version is saved first.'))return;
+    try{DB=Object.assign(D0(),JSON.parse(h.data));DB.ts=Date.now();DB.base=FB.last||0;persist();CONFLICT=false;push(true,true);SYMSG='Restored.';draw()}catch(e){SYMSG='Restore failed: '+e.message;draw()}}}))})))}catch(e){hist.textContent='Could not load: '+(e.code||e.message)}};
  return $('div',{},$('h3',{textContent:'Sync between devices'}),$('p',{className:'m',textContent:SYMSG||(FB&&FB.auth.currentUser?'Signed in as '+FB.auth.currentUser.email:'Not signed in. Sync is optional; the app works without it.')}),cfg,
   $('div',{className:'row'},em,pw),$('div',{className:'row'},$('button',{className:'pri',textContent:'Sign in',onclick:()=>go(false)}),$('button',{textContent:'Create account',onclick:()=>go(true)}),
    $('button',{textContent:'Sign out',onclick:async()=>{if(FB)await FB.Au.signOut(FB.auth);SYMSG='Signed out.';draw()}})),
-  $('div',{className:'row'},$('button',{textContent:'Use cloud data here',onclick:async()=>{try{if(!FB||!FB.ref)throw new Error('Sign in first.');const sn=await FB.Fs.getDoc(FB.ref);if(!sn.exists())throw new Error('Nothing in the cloud yet.');
-    if(!confirm('Replace this device\u2019s data with the cloud copy?'))return;const d=sn.data();DB=Object.assign(D0(),JSON.parse(d.data));DB.ts=d.ts;try{localStorage.setItem(KEY,JSON.stringify(DB))}catch(e){}SYMSG=sm()}catch(e){SYMSG='Sync error: '+(e.code||e.message)}draw()}}),
-   $('button',{textContent:'Send this device\u2019s data to cloud',onclick:()=>{if(!FB||!FB.ref){SYMSG='Sign in first.';draw();return}if(confirm('Replace the cloud copy with this device\u2019s data?')){save();SYMSG='Sending\u2026';draw()}}})))}
+  $('div',{className:'row'},$('button',{textContent:'Previous cloud versions',onclick:loadHist})),hist)}
 function draw(){const tabs=[['count','Count'],['list','List'],['find','Find'],['scan','Scan'],['setup','Setup']];
  document.getElementById('nav').replaceChildren(...tabs.map(([k,l])=>$('button',{textContent:l,className:tab===k?'on':'',onclick:()=>{tab=k;Q='';EDIT=false;draw()}})));
  document.getElementById('ttl').textContent={count:'Count',list:'Shopping list',find:'Find',scan:'Products',setup:'Setup'}[tab];
- document.getElementById('app').replaceChildren(({count:vCount,list:vList,find:vFind,scan:vScan,setup:vSetup})[tab]())}
+ document.getElementById('app').replaceChildren(banner(),({count:vCount,list:vList,find:vFind,scan:vScan,setup:vSetup})[tab]())}
 draw();{const c=SY().cfg;if(c)fbInit(parseCfg(c)).catch(e=>{SYMSG='Sync error: '+(e.code||e.message)})}
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script></body></html>
