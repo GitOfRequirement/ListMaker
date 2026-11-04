@@ -139,21 +139,26 @@ function vScan(){const v=$('div'),box=$('div'),res=$('div'),list=$('div'),inp=$(
   $('input',{type:'search',placeholder:'Search saved products\u2026',value:Q,oninput:e=>{Q=e.target.value;fillList()}}),list);fillList();return v}
 const SY=()=>{try{return JSON.parse(localStorage.getItem('pantry_sync')||'{}')}catch(e){return{}}},SYset=o=>{try{localStorage.setItem('pantry_sync',JSON.stringify(Object.assign(SY(),o)))}catch(e){}};
 let FB=null,SYMSG='',PT=null;
+const sm=()=>'Synced '+new Date().toLocaleTimeString()+' \u00b7 '+Object.keys(DB.groups).length+' items, '+DB.areas.length+' areas, '+Object.keys(DB.products).length+' products';
 const parseCfg=t=>{const o={};for(const m of t.matchAll(/(\w+)\s*:\s*["']([^"']*)["']/g))o[m[1]]=m[2];return o};
 async function fbInit(c){if(FB)return FB;const B='https://www.gstatic.com/firebasejs/10.14.1/',[A,Au,Fs]=await Promise.all([import(B+'firebase-app.js'),import(B+'firebase-auth.js'),import(B+'firebase-firestore.js')]);
  const app=A.initializeApp(c);FB={Au,Fs,auth:Au.getAuth(app),db:Fs.getFirestore(app)};
  Au.onAuthStateChanged(FB.auth,u=>{if(u)watch(u);else{if(FB.un)FB.un();FB.ref=null}if(tab==='setup')draw()});return FB}
 function watch(u){FB.ref=FB.Fs.doc(FB.db,'users',u.uid);if(FB.un)FB.un();
  FB.un=FB.Fs.onSnapshot(FB.ref,s=>{const d=s.exists()?s.data():null;if(!d){push(true);return}
-  if(d.ts>DB.ts){try{DB=Object.assign(D0(),JSON.parse(d.data));DB.ts=d.ts;try{localStorage.setItem(KEY,JSON.stringify(DB))}catch(e){}SYMSG='Synced '+new Date().toLocaleTimeString();if(!document.activeElement||document.activeElement.tagName!=='INPUT')draw()}catch(e){}}
+  let rg=0;try{rg=Object.keys(JSON.parse(d.data).groups||{}).length}catch(e){}
+  if(d.ts>DB.ts||(rg>0&&!Object.keys(DB.groups).length)){try{DB=Object.assign(D0(),JSON.parse(d.data));DB.ts=d.ts;try{localStorage.setItem(KEY,JSON.stringify(DB))}catch(e){}SYMSG=sm();if(!document.activeElement||document.activeElement.tagName!=='INPUT')draw()}catch(e){}}
   else if(d.ts<DB.ts)push(true)},e=>{SYMSG='Sync error: '+(e.code||e.message)})}
-function push(now){if(!FB||!FB.ref)return;clearTimeout(PT);PT=setTimeout(()=>{FB.Fs.setDoc(FB.ref,{data:JSON.stringify(DB),ts:DB.ts}).then(()=>{SYMSG='Synced '+new Date().toLocaleTimeString()}).catch(e=>{SYMSG='Sync error: '+(e.code||e.message)})},now?0:800)}
+function push(now){if(!FB||!FB.ref)return;clearTimeout(PT);PT=setTimeout(()=>{FB.Fs.setDoc(FB.ref,{data:JSON.stringify(DB),ts:DB.ts}).then(()=>{SYMSG=sm()}).catch(e=>{SYMSG='Sync error: '+(e.code||e.message)})},now?0:800)}
 function syncUI(){const S=SY(),cfg=$('textarea',{placeholder:'Paste your Firebase config here',value:S.cfg||''}),em=$('input',{type:'text',placeholder:'Email',value:S.email||'',autocapitalize:'none'}),pw=$('input',{type:'password',placeholder:'Password'});
  const go=async create=>{try{const c=parseCfg(cfg.value);if(!c.apiKey||!c.projectId)throw new Error('The config looks incomplete.');SYset({cfg:cfg.value,email:em.value.trim()});const f=await fbInit(c);
    await(create?f.Au.createUserWithEmailAndPassword:f.Au.signInWithEmailAndPassword)(f.auth,em.value.trim(),pw.value);SYMSG='Signed in.'}catch(e){SYMSG='Sync error: '+(e.code||e.message)}draw()};
  return $('div',{},$('h3',{textContent:'Sync between devices'}),$('p',{className:'m',textContent:SYMSG||(FB&&FB.auth.currentUser?'Signed in as '+FB.auth.currentUser.email:'Not signed in. Sync is optional; the app works without it.')}),cfg,
   $('div',{className:'row'},em,pw),$('div',{className:'row'},$('button',{className:'pri',textContent:'Sign in',onclick:()=>go(false)}),$('button',{textContent:'Create account',onclick:()=>go(true)}),
-   $('button',{textContent:'Sign out',onclick:async()=>{if(FB)await FB.Au.signOut(FB.auth);SYMSG='Signed out.';draw()}})))}
+   $('button',{textContent:'Sign out',onclick:async()=>{if(FB)await FB.Au.signOut(FB.auth);SYMSG='Signed out.';draw()}})),
+  $('div',{className:'row'},$('button',{textContent:'Use cloud data here',onclick:async()=>{try{if(!FB||!FB.ref)throw new Error('Sign in first.');const sn=await FB.Fs.getDoc(FB.ref);if(!sn.exists())throw new Error('Nothing in the cloud yet.');
+    if(!confirm('Replace this device\u2019s data with the cloud copy?'))return;const d=sn.data();DB=Object.assign(D0(),JSON.parse(d.data));DB.ts=d.ts;try{localStorage.setItem(KEY,JSON.stringify(DB))}catch(e){}SYMSG=sm()}catch(e){SYMSG='Sync error: '+(e.code||e.message)}draw()}}),
+   $('button',{textContent:'Send this device\u2019s data to cloud',onclick:()=>{if(!FB||!FB.ref){SYMSG='Sign in first.';draw();return}if(confirm('Replace the cloud copy with this device\u2019s data?')){save();SYMSG='Sending\u2026';draw()}}})))}
 function draw(){const tabs=[['count','Count'],['list','List'],['find','Find'],['scan','Scan'],['setup','Setup']];
  document.getElementById('nav').replaceChildren(...tabs.map(([k,l])=>$('button',{textContent:l,className:tab===k?'on':'',onclick:()=>{tab=k;Q='';EDIT=false;draw()}})));
  document.getElementById('ttl').textContent={count:'Count',list:'Shopping list',find:'Find',scan:'Products',setup:'Setup'}[tab];
