@@ -39,7 +39,7 @@ const ago=t=>{const d=Math.floor((Date.now()-t)/864e5);return d<1?'today':d===1?
 function setT(a,g,n){(DB.targets[a]=DB.targets[a]||{})[g]=n;if(!n)delete DB.targets[a][g];save()}
 function setC(a,g,n){(DB.counts[a]=DB.counts[a]||{})[g]={n,at:Date.now()};save()}
 const cur=()=>DB.areas.find(x=>x.id===CUR)||DB.areas[0];
-const items=a=>Object.keys(DB.groups).filter(g=>tg(a.id,g)>0).sort((x,y)=>x.localeCompare(y));
+const items=a=>Object.keys(DB.groups).filter(g=>tg(a.id,g)>0||(cn(a.id,g)&&cn(a.id,g).n>0)).sort((x,y)=>x.localeCompare(y));
 function suggestFrom(t){const rows=[];let par={};
  t.split('\n').forEach(l=>{if(l.startsWith('#par ')){try{par=JSON.parse(l.slice(5))}catch(e){}return}if(l[0]==='#')return;const c=l.split('\t');if(c.length>=7&&c[6])rows.push({d:c[1],q:+c[3]||1,t:c[6]})});
  const ds=[...new Set(rows.map(r=>r.d).filter(Boolean))].sort(),T={};let st=null,pv=null;
@@ -56,23 +56,47 @@ function doImport(t){t=t.trim();if(!t)return'Nothing to import.';
   return'Imported '+Object.keys(s).length+' items ('+n+' new) with suggested totals. Place them in areas with Count, then Edit items.'}
  return'Not recognised. Paste the compact export from the previous app, or a backup from this one.'}
 function listRows(){return Object.keys(DB.groups).filter(g=>total(g)>0&&need(g)>0).sort((x,y)=>x.localeCompare(y))}
+let SCANM=false,LOG=[],UNDO=null,SMODE='remove',STOPF=null;
+const note=m=>{LOG.unshift(m);LOG=LOG.slice(0,8)};
+function applyScan(a,p,mode){const g=p.group,c=cn(a.id,g),n=c?c.n:0;if(!DB.groups[g])DB.groups[g]={};
+ if(mode==='remove'&&!c&&!tg(a.id,g)){note('\u2717 '+g+': not in '+a.name);return}
+ if(mode==='remove'&&n===0){note('\u26a0 '+g+' was already 0');return}
+ UNDO={a:a.id,g,prev:c?{...c}:null};const m=mode==='remove'?n-1:n+1;setC(a.id,g,m);note((mode==='remove'?'\u2212 ':'+ ')+g+': '+n+' \u2192 '+m)}
+function undoScan(){if(!UNDO)return;const u=UNDO;if(u.prev)(DB.counts[u.a]=DB.counts[u.a]||{})[u.g]=u.prev;else if(DB.counts[u.a])delete DB.counts[u.a][u.g];save();note('undid last change to '+u.g);UNDO=null}
+async function getProd(code){const p=DB.products[code];if(p)return{p,isNew:false};let o=null;try{o=await off(code)}catch(e){}
+ return{isNew:true,p:o?Object.assign({code,name:[o.brands,o.product_name,o.quantity].filter(Boolean).join(' '),group:'',for:'all',exact:false,src:'Open Food Facts'},flagsFrom(o)):{code,name:'',group:'',for:'all',exact:false,dairy:'unknown',gluten:'unknown',traces:[],src:'manual (not found online)'}}}
+async function streamScan(box,onCode){if(!('BarcodeDetector' in window))throw new Error('This browser cannot scan barcodes.');
+ const vid=$('video',{autoplay:true,playsInline:true,muted:true,style:'width:100%;border-radius:12px'}),stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}}),det=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e']});
+ let on=true,last='',at=0;vid.srcObject=stream;box.replaceChildren(vid);const stop=()=>{on=false;stream.getTracks().forEach(t=>t.stop());box.replaceChildren()};
+ (async()=>{while(on){try{const r=await det.detect(vid);if(r.length&&on){const c=r[0].rawValue,t=Date.now();if(c!==last||t-at>2500){last=c;at=t;await onCode(c,stop)}}}catch(e){}await new Promise(x=>setTimeout(x,250))}})();return stop}
+async function scanPlace(a,box,res,fill){try{const code=await startScan(box);if(!code)return;const{p,isNew}=await getProd(code);
+ const place=pr=>{const g=pr.group;setT(a.id,g,tg(a.id,g)+1);fill();res.replaceChildren($('p',{className:'m',textContent:pr.name+' \u2192 '+g+': wanted here '+tg(a.id,g)+'. Tap the numbers below to change it.'}))};
+ if(isNew)res.replaceChildren($('p',{className:'m',textContent:'New barcode. Link it to an item and it is added to '+a.name+'.'}),pCard(p,true,()=>{res.replaceChildren();if(DB.products[code])place(DB.products[code])}));else place(p)}catch(e){box.textContent=e.message||String(e)}}
+function vScanMode(a){const v=$('div'),box=$('div'),res=$('div'),logd=$('div',{className:'m'}),mb=$('div');
+ const paint=()=>logd.replaceChildren(...LOG.map(l=>$('div',{textContent:l}))),mode=()=>mb.replaceChildren(seg([['remove','Remove (\u22121)'],['add','Add (+1)']],SMODE,x=>{SMODE=x;mode()}));
+ const begin=async()=>{try{if(STOPF)STOPF();STOPF=await streamScan(box,async(code,halt)=>{const{p,isNew}=await getProd(code);
+   if(isNew){halt();STOPF=null;res.replaceChildren($('p',{className:'m',textContent:'New barcode: link it to an item, then scanning continues.'}),pCard(p,true,()=>{res.replaceChildren();if(DB.products[code]){applyScan(a,DB.products[code],SMODE);paint()}begin()}));return}
+   applyScan(a,p,SMODE);paint()})}catch(e){box.textContent=e.message||String(e)}};
+ v.append($('div',{className:'bar'},$('b',{textContent:'Scan mode: '+a.name}),$('button',{className:'pri',textContent:'Done',onclick:()=>{SCANM=false;draw()}})),
+  $('p',{className:'m',textContent:'Each scan changes the count in '+a.name+' by one. Remove mode is for taking items out; Add mode is for putting them away. Items you add that are not staples show as extras.'}),mb,
+  $('div',{className:'row'},$('button',{className:'pri',textContent:'Start scanning',onclick:begin}),$('button',{textContent:'Pause',onclick:()=>{if(STOPF){STOPF();STOPF=null}}}),$('button',{textContent:'Undo last',onclick:()=>{undoScan();paint()}})),box,res,logd);mode();paint();return v}
 function cRow(a,g){const T=tg(a.id,g),c=cn(a.id,g),n=c?c.n:null,st=n==null?'':n<T?'low':'ok',mx=Math.min(12,Math.max(T+2,5));
- const r=$('div',{className:'card '+st},$('div',{className:'nm',textContent:g}),$('div',{className:'m',textContent:'wanted '+T+' \u00b7 '+(c?'counted '+ago(c.at):'not counted yet')}),
+ const r=$('div',{className:'card '+st},$('div',{className:'nm',textContent:g}),$('div',{className:'m',textContent:(T?'wanted '+T:'extra (not a staple)')+' \u00b7 '+(c?'counted '+ago(c.at):'not counted yet')}),
   $('div',{className:'chips'},Array.from({length:mx+1},(_,i)=>$('button',{className:'chip'+(n===i?' sel'+(st==='low'?' low':''):''),textContent:i,onclick:()=>{setC(a.id,g,i);r.replaceWith(cRow(a,g));prog()}})),n>mx?$('button',{className:'chip sel',textContent:n}):''));return r}
 function prog(){const a=cur(),it=items(a),e=document.getElementById('prog');if(e)e.textContent=a.name+': '+it.filter(g=>cn(a.id,g)).length+' of '+it.length+' counted'}
 function eRow(a,g){const t=tg(a.id,g),s=DB.sug[g],r=$('div',{className:'card'},$('div',{className:'nm',textContent:g}),
   $('div',{className:'m',textContent:'here: '+t+' \u00b7 all areas: '+total(g)+(s?' \u00b7 suggested total '+s:'')}),
   $('div',{className:'chips'},Array.from({length:11},(_,i)=>$('button',{className:'chip'+(t===i?' sel':''),textContent:i,onclick:()=>{setT(a.id,g,i);r.replaceWith(eRow(a,g))}}))));return r}
-function vCount(){const v=$('div'),a=cur();
- v.append($('div',{className:'pills'},DB.areas.map(x=>$('button',{className:'pill'+(x===a?' on':''),textContent:x.name,onclick:()=>{CUR=x.id;EDIT=false;draw()}}))));
+function vCount(){const v=$('div'),a=cur();if(SCANM&&a)return vScanMode(a);
+ v.append($('div',{className:'pills'},DB.areas.map(x=>$('button',{className:'pill'+(x===a?' on':''),textContent:x.name,onclick:()=>{CUR=x.id;EDIT=false;SCANM=false;draw()}}))));
  if(!a)return v;const its=items(a);
- if(EDIT){const box=$('div'),inp=$('input',{type:'search',placeholder:'Search items\u2026',value:Q,oninput:e=>{Q=e.target.value;fill()}}),nw=$('input',{type:'text',placeholder:'New item name'});
+ if(EDIT){const sbox=$('div'),sres=$('div'),box=$('div'),inp=$('input',{type:'search',placeholder:'Search items\u2026',value:Q,oninput:e=>{Q=e.target.value;fill()}}),nw=$('input',{type:'text',placeholder:'New item name'});
   const fill=()=>{const q=Q.toLowerCase(),gs=Object.keys(DB.groups).filter(g=>!q||g.toLowerCase().includes(q)).sort((x,y)=>((!total(x)&&DB.sug[x]?0:1)-(!total(y)&&DB.sug[y]?0:1))||x.localeCompare(y));box.replaceChildren(...gs.map(g=>eRow(a,g)))};
   v.append($('div',{className:'bar'},$('b',{textContent:'Choose what lives in '+a.name}),$('button',{className:'pri',textContent:'Done',onclick:()=>{EDIT=false;Q='';draw()}})),
    $('p',{className:'m',textContent:'Tap a number for how many you want to keep in this area. Items with a suggested total from your orders come first.'}),inp,
-   $('div',{className:'row'},nw,$('button',{textContent:'Add item',onclick:()=>{const n=nw.value.trim();if(!n)return;if(!DB.groups[n])DB.groups[n]={};setT(a.id,n,1);nw.value='';fill()}})),box);fill();return v}
- v.append($('div',{className:'bar'},$('b',{id:'prog'}),$('button',{textContent:'Edit items',onclick:()=>{EDIT=true;draw()}}),
-  its.length?$('button',{textContent:'All good',onclick:()=>{if(confirm('Mark every item in '+a.name+' as fully stocked?')){its.forEach(g=>setC(a.id,g,tg(a.id,g)));draw()}}}):''));
+   $('div',{className:'row'},nw,$('button',{textContent:'Scan a barcode',onclick:()=>scanPlace(a,sbox,sres,fill)}),$('button',{textContent:'Add item',onclick:()=>{const n=nw.value.trim();if(!n)return;if(!DB.groups[n])DB.groups[n]={};setT(a.id,n,1);nw.value='';fill()}})),sbox,sres,box);fill();return v}
+ v.append($('div',{className:'bar'},$('b',{id:'prog'}),$('button',{textContent:'Edit items',onclick:()=>{EDIT=true;draw()}}),$('button',{textContent:'Scan mode',onclick:()=>{SCANM=true;draw()}}),
+  its.length?$('button',{textContent:'All good',onclick:()=>{if(confirm('Mark every item in '+a.name+' as fully stocked?')){its.filter(g=>tg(a.id,g)>0).forEach(g=>setC(a.id,g,tg(a.id,g)));draw()}}}):''));
  if(!its.length)v.append($('p',{className:'m',textContent:'Nothing here yet. Tap Edit items to choose what lives in '+a.name+'.'}));
  its.forEach(g=>v.append(cRow(a,g)));setTimeout(prog);return v}
 function vList(){const v=$('div'),rows=listRows(),pending=Object.keys(DB.groups).filter(g=>!total(g)&&DB.sug[g]).length;
@@ -172,8 +196,8 @@ function syncUI(){const S=SY(),cfg=$('textarea',{placeholder:'Paste your Firebas
   $('div',{className:'row'},em,pw),$('div',{className:'row'},$('button',{className:'pri',textContent:'Sign in',onclick:()=>go(false)}),$('button',{textContent:'Create account',onclick:()=>go(true)}),
    $('button',{textContent:'Sign out',onclick:async()=>{if(FB)await FB.Au.signOut(FB.auth);SYMSG='Signed out.';draw()}})),
   $('div',{className:'row'},$('button',{textContent:'Previous cloud versions',onclick:loadHist})),hist)}
-function draw(){const tabs=[['count','Count'],['list','List'],['find','Find'],['scan','Scan'],['setup','Setup']];
- document.getElementById('nav').replaceChildren(...tabs.map(([k,l])=>$('button',{textContent:l,className:tab===k?'on':'',onclick:()=>{tab=k;Q='';EDIT=false;draw()}})));
+function draw(){if(STOPF){STOPF();STOPF=null}const tabs=[['count','Count'],['list','List'],['find','Find'],['scan','Scan'],['setup','Setup']];
+ document.getElementById('nav').replaceChildren(...tabs.map(([k,l])=>$('button',{textContent:l,className:tab===k?'on':'',onclick:()=>{tab=k;Q='';EDIT=false;SCANM=false;draw()}})));
  document.getElementById('ttl').textContent={count:'Count',list:'Shopping list',find:'Find',scan:'Products',setup:'Setup'}[tab];
  document.getElementById('app').replaceChildren(banner(),({count:vCount,list:vList,find:vFind,scan:vScan,setup:vSetup})[tab]())}
 draw();{const c=SY().cfg;if(c)fbInit(parseCfg(c)).catch(e=>{SYMSG='Sync error: '+(e.code||e.message)})}
