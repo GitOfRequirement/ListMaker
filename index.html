@@ -17,7 +17,7 @@ nav button{flex:1;border:0;background:none;padding:12px 4px;font:inherit;font-si
 .card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:12px;margin:8px 0}.card.low{background:var(--lowbg)}.card.ok{background:var(--okbg)}
 .nm{font-weight:600;margin-bottom:2px}.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .chip{min-width:44px;height:44px;border-radius:12px;border:1px solid var(--bd);background:var(--card);color:var(--fg);font:inherit;font-size:17px}
-.chip.sel{background:var(--ac);color:var(--acf);border-color:var(--ac);font-weight:700}.chip.sel.low{background:var(--low);border-color:var(--low);color:#fff}
+.chip.wide{min-width:0;padding:0 14px;font-size:15px}.chip.sel{background:var(--ac);color:var(--acf);border-color:var(--ac);font-weight:700}.chip.sel.low{background:var(--low);border-color:var(--low);color:#fff}
 button,input,textarea{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px 12px}button{cursor:pointer}
 button.pri{background:var(--ac);color:var(--acf);border-color:var(--ac)}input[type=search],input[type=text]{width:100%}textarea{width:100%;min-height:110px}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}.row>input{flex:1;min-width:120px}
@@ -25,11 +25,11 @@ button.pri{background:var(--ac);color:var(--acf);border-color:var(--ac)}input[ty
 </style></head><body>
 <header><h1 id="ttl">Pantry</h1></header><main id="app"></main><nav id="nav"></nav>
 <script>
-const KEY='pantry_v1',D0=()=>({areas:[],groups:{},targets:{},counts:{},checked:{},sug:{}});
+const KEY='pantry_v1',D0=()=>({areas:[],groups:{},targets:{},counts:{},checked:{},sug:{},products:{},ts:0});
 let DB=D0(),tab='count',CUR='',EDIT=false,Q='',MSG='';
 try{const x=localStorage.getItem(KEY);if(x)DB=Object.assign(D0(),JSON.parse(x))}catch(e){}
 if(!DB.areas.length)DB.areas=['Fridge','Freezer','Pantry'].map((n,i)=>({id:'a'+(i+1),name:n}));
-const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(DB))}catch(e){}};
+const save=()=>{DB.ts=Date.now();try{localStorage.setItem(KEY,JSON.stringify(DB))}catch(e){}push()};
 const $=(t,a,...k)=>{const e=document.createElement(t);Object.assign(e,a||{});k.flat().forEach(c=>e.append(c));return e};
 const med=a=>{a=[...a].sort((x,y)=>x-y);const m=a.length>>1;return a.length%2?a[m]:(a[m-1]+a[m])/2};
 const tg=(a,g)=>(DB.targets[a]||{})[g]||0,cn=(a,g)=>(DB.counts[a]||{})[g]||null;
@@ -83,7 +83,7 @@ function vList(){const v=$('div'),rows=listRows(),pending=Object.keys(DB.groups)
  if(nc)v.append($('p',{className:'w',textContent:nc+' item slot'+(nc===1?'':'s')+' not counted yet, so this list may be longer than needed. Count them in the Count tab.'}));
  if(pending)v.append($('p',{className:'m',textContent:pending+' imported item'+(pending===1?'':'s')+' not placed in any area yet (Count, then Edit items).'}));
  rows.forEach(g=>{const u=unc(g),ck=!!DB.checked[g];v.append($('div',{className:'card tick'+(ck?' done':'')},$('input',{type:'checkbox',checked:ck,onchange:e=>{DB.checked[g]=e.target.checked;if(!e.target.checked)delete DB.checked[g];save();draw()}}),
-  $('div',{},$('div',{className:'nm',textContent:need(g)+' \u00d7 '+g}),$('div',{className:'m',textContent:'wanted '+total(g)+' \u00b7 have '+haveSum(g)+(u.length?' \u00b7 not counted in '+u.map(x=>x.name).join(', '):'')}))))});
+  $('div',{},$('div',{className:'nm',textContent:need(g)+' \u00d7 '+g}),$('div',{className:'m',textContent:'wanted '+total(g)+' \u00b7 have '+haveSum(g)+(u.length?' \u00b7 not counted in '+u.map(x=>x.name).join(', '):'')}),prodLine(g))))});
  if(!rows.length)v.append($('p',{className:'m',textContent:'Nothing to buy. Place items in areas and count them first.'}));return v}
 function vFind(){const v=$('div'),box=$('div'),inp=$('input',{type:'search',placeholder:'Search: where is it, how many?',value:Q,oninput:e=>{Q=e.target.value;fill()}});
  const fill=()=>{const q=Q.toLowerCase(),gs=Object.keys(DB.groups).filter(g=>q&&g.toLowerCase().includes(q)).sort();
@@ -96,14 +96,68 @@ function vSetup(){const v=$('div'),ia=$('input',{type:'text',placeholder:'New ar
    $('button',{textContent:'\u2191',onclick:()=>{if(i){DB.areas.splice(i-1,0,DB.areas.splice(i,1)[0]);save();draw()}}}),$('button',{textContent:'\u2193',onclick:()=>{if(i<DB.areas.length-1){DB.areas.splice(i+1,0,DB.areas.splice(i,1)[0]);save();draw()}}}),
    $('button',{textContent:'Delete',onclick:()=>{if(confirm('Delete '+a.name+' and its counts?')){DB.areas.splice(i,1);delete DB.targets[a.id];delete DB.counts[a.id];save();draw()}}}))),
   $('div',{className:'row'},ia,$('button',{className:'pri',textContent:'Add area',onclick:()=>{const n=ia.value.trim();if(n){DB.areas.push({id:'a'+Date.now(),name:n});save();draw()}}})),
-  $('h3',{textContent:'Import'}),ta,$('div',{className:'row'},$('button',{className:'pri',textContent:'Import',onclick:()=>{MSG=doImport(ta.value);draw()}}),$('span',{className:'m',textContent:MSG||Object.keys(DB.groups).length+' items stored.'})),
+  syncUI(),$('h3',{textContent:'Import'}),ta,$('div',{className:'row'},$('button',{className:'pri',textContent:'Import',onclick:()=>{MSG=doImport(ta.value);draw()}}),$('span',{className:'m',textContent:MSG||Object.keys(DB.groups).length+' items stored.'})),
   $('h3',{textContent:'Backup'}),$('p',{className:'m',textContent:'Everything is stored on this device only. Copy this text somewhere safe, or save it as a file. Paste it in the box above to restore.'}),bk,
   $('div',{className:'row'},$('button',{textContent:'Copy',onclick:()=>{bk.select();try{navigator.clipboard.writeText(bk.value)}catch(e){}}}),
    $('button',{textContent:'Save as file',onclick:()=>{const a=$('a',{href:URL.createObjectURL(new Blob([bk.value],{type:'application/json'})),download:'pantry-backup-'+new Date().toISOString().slice(0,10)+'.json'});a.click()}}),
    $('button',{textContent:'Erase everything',onclick:()=>{if(confirm('Erase all areas, items and counts on this device?')){DB=D0();DB.areas=[{id:'a1',name:'Fridge'}];save();draw()}}})));return v}
-function draw(){const tabs=[['count','Count'],['list','List'],['find','Find'],['setup','Setup']];
+const prods=g=>Object.values(DB.products).filter(p=>p.group===g);
+const prodLine=g=>$('div',{className:'m',textContent:prods(g).length?'Products: '+prods(g).map(p=>(p.exact?'\u2605 ':'')+p.name).join(' \u00b7 '):''});
+const bad=p=>!p.ok&&((p.for!=='kids'&&p.dairy==='yes')||(p.for!=='me'&&p.gluten==='yes')),unk=p=>!p.ok&&((p.for!=='kids'&&p.dairy==='unknown')||(p.for!=='me'&&p.gluten==='unknown'));
+async function off(code){const r=await fetch('https://world.openfoodfacts.org/api/v2/product/'+encodeURIComponent(code)+'.json?fields=product_name,brands,quantity,allergens_tags,ingredients_text,traces_tags'),j=await r.json();return j.status===1?j.product:null}
+function flagsFrom(o){const ing=(o.ingredients_text||'').length>10,t=o.allergens_tags||[];return{dairy:t.includes('en:milk')?'yes':ing?'no':'unknown',gluten:t.includes('en:gluten')?'yes':ing?'no':'unknown',traces:(o.traces_tags||[]).filter(x=>x==='en:milk'||x==='en:gluten').map(x=>x.slice(3))}}
+const seg=(opts,val,pick)=>$('div',{className:'chips'},opts.map(([v,l])=>$('button',{className:'chip wide'+(val===v?' sel':''),textContent:l,onclick:()=>pick(v)})));
+function pCard(p,isNew,done){const r=$('div',{className:'card'}),paint=()=>{
+  const nm=$('input',{type:'text',value:p.name,placeholder:'Product name',onchange:e=>{p.name=e.target.value.trim()}}),gr=$('input',{type:'text',value:p.group,placeholder:'Item it belongs to, e.g. Ham, cooked sliced',onchange:e=>{p.group=e.target.value.trim()}});gr.setAttribute('list','gl');
+  r.replaceChildren($('datalist',{id:'gl'},Object.keys(DB.groups).sort().map(g=>$('option',{value:g}))),$('div',{className:'m',textContent:'Barcode '+p.code+' \u00b7 source: '+(p.src||'manual')}),nm,$('div',{style:'height:8px'}),gr,
+   $('div',{className:'m',textContent:'Who is it for?'}),seg([['all','Everyone'],['kids','Kids (dairy ok)'],['me','Me (gluten ok)']],p.for,v=>{p.for=v;paint()}),
+   $('div',{className:'m',textContent:'Dairy'}),seg([['yes','Has dairy'],['no','No dairy'],['unknown','Unknown']],p.dairy,v=>{p.dairy=v;paint()}),
+   $('div',{className:'m',textContent:'Gluten'}),seg([['yes','Has gluten'],['no','No gluten'],['unknown','Unknown']],p.gluten,v=>{p.gluten=v;paint()}),
+   $('div',{className:'m',textContent:'When shopping'}),seg([[true,'This exact one'],[false,'Any similar is fine']],!!p.exact,v=>{p.exact=v;paint()}),
+   bad(p)?$('p',{className:'w',textContent:'Not suitable for the people this is marked for: it contains dairy or gluten.'}):unk(p)?$('p',{className:'w',textContent:'Dairy or gluten is unknown. Check the ingredients.'}):'',
+   (bad(p)||unk(p)||p.ok)?seg([[true,'I checked it: accept'],[false,'Still needs review']],!!p.ok,v=>{p.ok=v;paint()}):'',
+   (p.traces||[]).length?$('p',{className:'m',textContent:'May contain traces of: '+p.traces.join(', ')}):'',
+   $('div',{className:'row'},$('button',{className:'pri',textContent:'Save',onclick:()=>{p.name=nm.value.trim();p.group=gr.value.trim();if(!p.name||!p.group){alert('Give it a name and an item to belong to.');return}
+     if(!DB.groups[p.group])DB.groups[p.group]={};DB.products[p.code]=p;save();done()}}),$('button',{textContent:'Cancel',onclick:done}),
+    isNew?'':$('button',{textContent:'Delete',onclick:()=>{if(confirm('Delete this product?')){delete DB.products[p.code];save();done()}}})))};paint();return r}
+async function startScan(box){if(!('BarcodeDetector' in window))throw new Error('This browser cannot scan barcodes. Type the number instead.');
+ const vid=$('video',{autoplay:true,playsInline:true,muted:true,style:'width:100%;border-radius:12px'}),stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});vid.srcObject=stream;
+ const det=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e']});let on=true;const stop=()=>{on=false;stream.getTracks().forEach(t=>t.stop());box.replaceChildren()};
+ box.replaceChildren(vid,$('div',{className:'row'},$('button',{textContent:'Cancel',onclick:stop})));
+ return new Promise(res=>{(async()=>{while(on){try{const r=await det.detect(vid);if(r.length){stop();res(r[0].rawValue);return}}catch(e){}await new Promise(x=>setTimeout(x,250))}res(null)})()})}
+function vScan(){const v=$('div'),box=$('div'),res=$('div'),list=$('div'),inp=$('input',{type:'text',inputMode:'numeric',placeholder:'Or type the barcode number'});
+ const fillList=()=>{const q=Q.toLowerCase(),ps=Object.values(DB.products).filter(p=>!q||(p.name+' '+p.group).toLowerCase().includes(q)).sort((a,b)=>a.group.localeCompare(b.group)||a.name.localeCompare(b.name));
+  list.replaceChildren(...ps.map(p=>$('div',{className:'card',onclick:()=>{res.replaceChildren(pCard(p,false,()=>{res.replaceChildren();draw()}));scrollTo(0,0)}},$('div',{className:'nm',textContent:p.name}),
+   $('div',{className:'m',textContent:p.group+(p.exact?' \u00b7 \u2605 exact':'')+' \u00b7 '+(p.ok?'accepted':bad(p)?'\u26a0 not suitable':unk(p)?'check ingredients':'ok')}))),ps.length?'':$('p',{className:'m',textContent:'No products saved yet.'}))};
+ const open=async code=>{code=(code||'').trim();if(!code)return;let p=DB.products[code],isNew=false;
+  if(!p){isNew=true;res.replaceChildren($('p',{className:'m',textContent:'Looking up '+code+'\u2026'}));let o=null;try{o=await off(code)}catch(e){}
+   p=o?Object.assign({code,name:[o.brands,o.product_name,o.quantity].filter(Boolean).join(' '),group:'',for:'all',exact:false,src:'Open Food Facts'},flagsFrom(o)):{code,name:'',group:'',for:'all',exact:false,dairy:'unknown',gluten:'unknown',traces:[],src:'manual (not found online)'}}
+  res.replaceChildren(pCard(p,isNew,()=>{res.replaceChildren();draw()}))};
+ const review=Object.values(DB.products).filter(p=>bad(p)||unk(p)).length;
+ v.append($('div',{className:'bar'},$('b',{textContent:Object.keys(DB.products).length+' products'+(review?' \u00b7 '+review+' to review':'')}),$('button',{className:'pri',textContent:'Scan a barcode',onclick:async()=>{try{const c=await startScan(box);if(c)open(c)}catch(e){box.textContent=e.message||String(e)}}})),
+  box,$('div',{className:'row'},inp,$('button',{textContent:'Look up',onclick:()=>open(inp.value)})),res,
+  $('input',{type:'search',placeholder:'Search saved products\u2026',value:Q,oninput:e=>{Q=e.target.value;fillList()}}),list);fillList();return v}
+const SY=()=>{try{return JSON.parse(localStorage.getItem('pantry_sync')||'{}')}catch(e){return{}}},SYset=o=>{try{localStorage.setItem('pantry_sync',JSON.stringify(Object.assign(SY(),o)))}catch(e){}};
+let FB=null,SYMSG='',PT=null;
+const parseCfg=t=>{const o={};for(const m of t.matchAll(/(\w+)\s*:\s*["']([^"']*)["']/g))o[m[1]]=m[2];return o};
+async function fbInit(c){if(FB)return FB;const B='https://www.gstatic.com/firebasejs/10.14.1/',[A,Au,Fs]=await Promise.all([import(B+'firebase-app.js'),import(B+'firebase-auth.js'),import(B+'firebase-firestore.js')]);
+ const app=A.initializeApp(c);FB={Au,Fs,auth:Au.getAuth(app),db:Fs.getFirestore(app)};
+ Au.onAuthStateChanged(FB.auth,u=>{if(u)watch(u);else{if(FB.un)FB.un();FB.ref=null}if(tab==='setup')draw()});return FB}
+function watch(u){FB.ref=FB.Fs.doc(FB.db,'users',u.uid);if(FB.un)FB.un();
+ FB.un=FB.Fs.onSnapshot(FB.ref,s=>{const d=s.exists()?s.data():null;if(!d){push(true);return}
+  if(d.ts>DB.ts){try{DB=Object.assign(D0(),JSON.parse(d.data));DB.ts=d.ts;try{localStorage.setItem(KEY,JSON.stringify(DB))}catch(e){}SYMSG='Synced '+new Date().toLocaleTimeString();if(!document.activeElement||document.activeElement.tagName!=='INPUT')draw()}catch(e){}}
+  else if(d.ts<DB.ts)push(true)},e=>{SYMSG='Sync error: '+(e.code||e.message)})}
+function push(now){if(!FB||!FB.ref)return;clearTimeout(PT);PT=setTimeout(()=>{FB.Fs.setDoc(FB.ref,{data:JSON.stringify(DB),ts:DB.ts}).then(()=>{SYMSG='Synced '+new Date().toLocaleTimeString()}).catch(e=>{SYMSG='Sync error: '+(e.code||e.message)})},now?0:800)}
+function syncUI(){const S=SY(),cfg=$('textarea',{placeholder:'Paste your Firebase config here',value:S.cfg||''}),em=$('input',{type:'text',placeholder:'Email',value:S.email||'',autocapitalize:'none'}),pw=$('input',{type:'password',placeholder:'Password'});
+ const go=async create=>{try{const c=parseCfg(cfg.value);if(!c.apiKey||!c.projectId)throw new Error('The config looks incomplete.');SYset({cfg:cfg.value,email:em.value.trim()});const f=await fbInit(c);
+   await(create?f.Au.createUserWithEmailAndPassword:f.Au.signInWithEmailAndPassword)(f.auth,em.value.trim(),pw.value);SYMSG='Signed in.'}catch(e){SYMSG='Sync error: '+(e.code||e.message)}draw()};
+ return $('div',{},$('h3',{textContent:'Sync between devices'}),$('p',{className:'m',textContent:SYMSG||(FB&&FB.auth.currentUser?'Signed in as '+FB.auth.currentUser.email:'Not signed in. Sync is optional; the app works without it.')}),cfg,
+  $('div',{className:'row'},em,pw),$('div',{className:'row'},$('button',{className:'pri',textContent:'Sign in',onclick:()=>go(false)}),$('button',{textContent:'Create account',onclick:()=>go(true)}),
+   $('button',{textContent:'Sign out',onclick:async()=>{if(FB)await FB.Au.signOut(FB.auth);SYMSG='Signed out.';draw()}})))}
+function draw(){const tabs=[['count','Count'],['list','List'],['find','Find'],['scan','Scan'],['setup','Setup']];
  document.getElementById('nav').replaceChildren(...tabs.map(([k,l])=>$('button',{textContent:l,className:tab===k?'on':'',onclick:()=>{tab=k;Q='';EDIT=false;draw()}})));
- document.getElementById('ttl').textContent={count:'Count',list:'Shopping list',find:'Find',setup:'Setup'}[tab];
- document.getElementById('app').replaceChildren(({count:vCount,list:vList,find:vFind,setup:vSetup})[tab]())}
-draw();if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+ document.getElementById('ttl').textContent={count:'Count',list:'Shopping list',find:'Find',scan:'Products',setup:'Setup'}[tab];
+ document.getElementById('app').replaceChildren(({count:vCount,list:vList,find:vFind,scan:vScan,setup:vSetup})[tab]())}
+draw();{const c=SY().cfg;if(c)fbInit(parseCfg(c)).catch(e=>{SYMSG='Sync error: '+(e.code||e.message)})}
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script></body></html>
