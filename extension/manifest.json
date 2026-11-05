@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Pantry – capture des commandes",
+  "version": "0.3.0",
+  "description": "Lit les commandes et les prix affichés sur Walmart.ca et Maxi.ca et les exporte pour l'app Pantry.",
+  "permissions": ["storage", "unlimitedStorage"],
+  "host_permissions": ["https://www.walmart.ca/*", "https://www.maxi.ca/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://www.walmart.ca/*", "https://www.maxi.ca/*"],
+      "js": ["parsers.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": { "default_popup": "popup.html", "default_title": "Pantry", "default_icon": "icon.png" },
+  "icons": { "128": "icon.png" }
+}

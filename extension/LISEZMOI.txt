@@ -1,0 +1,92 @@
+PANTRY – CAPTURE (extension Chrome, version 0.3)
+================================================
+
+À quoi ça sert
+--------------
+L'extension lit, directement dans les pages que vous ouvrez sur walmart.ca et
+maxi.ca :
+  1. vos commandes passées (produits, quantités, prix payés, rabais, non livrés) ;
+  2. les prix affichés sur les pages de produits (Mes articles, rabais,
+     circulaire, listes, recherche, catégories), avec le prix unitaire.
+Tout reste dans Chrome jusqu'à ce que vous exportiez un fichier.
+Elle ne clique jamais sur « Ajouter au panier » et n'envoie rien nulle part.
+
+
+Installation (une seule fois, environ 1 minute)
+-----------------------------------------------
+1. Dans Chrome, tapez dans la barre d'adresse :  chrome://extensions
+2. En haut à droite, activez « Mode développeur ».
+3. Cliquez « Charger l'extension non empaquetée ».
+4. Choisissez le dossier  extension  (celui qui contient ce fichier).
+5. Cliquez l'icône casse-tête (Extensions) à droite de la barre d'adresse
+   et épinglez « Pantry ».
+
+Après une mise à jour des fichiers, retournez dans chrome://extensions et
+cliquez la flèche circulaire « Actualiser » de Pantry.
+
+
+1) Récupérer tout l'historique (à faire une fois)
+--------------------------------------------------
+MAXI
+   - Ouvrez My Account > My Orders (maxi.ca/en/account/order-history).
+     Les 98 commandes sont sur une seule page.
+   - Dans l'encadré vert Pantry (en bas à droite), cliquez
+     « Capturer les N nouvelles de cette page ».
+WALMART
+   - Ouvrez Account > Purchase history.
+     L'historique a plusieurs pages (5 commandes par page).
+   - Cliquez « Parcourir toutes les pages et capturer » : l'extension tourne
+     les pages toute seule et compte les commandes, puis cliquez
+     « Capturer les N nouvelles ».
+
+Dans les deux cas, un nouvel onglet ouvre les commandes une par une, à un
+rythme humain (quelques secondes chacune). Laissez-le travailler, ne le
+fermez pas. Environ 10 minutes pour 100 commandes.
+Le bouton « Arrêter » est dans l'encadré ou dans l'icône Pantry.
+On peut relancer plus tard : les commandes déjà lues sont sautées.
+
+
+2) Relever les prix (avant chaque épicerie)
+-------------------------------------------
+Ouvrez une page de produits. L'encadré indique « N prix lus sur cette page ».
+   - Cliquez « Tout lire » : l'extension fait défiler la page jusqu'en bas,
+     clique « page suivante » ou « voir plus » tant qu'il y en a, et note
+     tous les prix. Bouton « Arrêter » à tout moment.
+   - Ou faites défiler vous-même : les prix sont notés au passage.
+Les pages les plus utiles :
+   - Walmart > My Items (« Mes articles ») : tous les produits déjà achetés,
+     avec le prix du jour.
+   - Walmart > Rollbacks, et la circulaire (Weekly Flyer).
+   - Maxi > votre liste « PC Express Favourites » (Shopping List).
+   - Maxi > All Deals, et My Shop.
+   - N'importe quelle recherche ou catégorie, sur les deux sites.
+Note : la circulaire Maxi (Weekly Flyer) est une image fournie par un autre
+service (Flipp) et ne peut pas être lue. Utilisez All Deals à la place :
+ce sont les mêmes rabais.
+
+
+2b) Les produits manquants
+--------------------------
+Certains produits achetés ne sont dans aucune liste (surtout chez Maxi).
+Après avoir capturé l'historique et lu vos listes, cliquez l'icône Pantry :
+la carte « N produits achetés 2 fois ou plus sans prix récent » les montre.
+   - « Relever les produits manquants » : un nouvel onglet fait une recherche
+     par nom pour chacun, une à la fois, et note le prix s'il le retrouve.
+   - Ceux qui ne sont pas retrouvés (produit retiré, nom différent) sont
+     réessayés dans 30 jours. Astuce : ajoutez à vos favoris Maxi ceux que
+     vous achetez souvent ; votre liste deviendra votre référence complète.
+
+
+3) Exporter
+-----------
+Cliquez l'icône Pantry :
+   - « Tout exporter (JSON, pour Claude) » : le fichier à me renvoyer.
+   - « Commandes en CSV » / « Prix en CSV » : pour regarder dans Excel.
+
+
+Si quelque chose ne marche pas
+------------------------------
+- « Commande non lue » ou aucun encadré : le site a peut-être changé.
+  Enregistrez la page (Ctrl+S, « Page Web complète ») et envoyez-la à Claude.
+- Une commande Maxi ouverte à la main (hors capture en lot) reçoit l'année la
+  plus probable, car Maxi n'affiche pas l'année sur la commande elle-même.
