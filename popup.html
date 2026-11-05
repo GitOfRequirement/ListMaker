@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8"><title>Pantry</title>
+<style>
+body{font:14px/1.4 system-ui,sans-serif;margin:0;padding:12px 14px;width:300px;color:#1c1d1a;background:#f6f7f4}
+h1{font-size:16px;margin:0 0 8px;color:#2d6a4f}
+.card{background:#fff;border:1px solid #d9dcd3;border-radius:10px;padding:8px 10px;margin:6px 0}
+.m{color:#666a62;font-size:13px}
+button{font:inherit;width:100%;margin:4px 0;padding:8px;border-radius:8px;border:1px solid #2d6a4f;background:#fff;color:#2d6a4f;cursor:pointer}
+button.p{background:#2d6a4f;color:#fff}button.d{border-color:#c2410c;color:#c2410c}
+ul{margin:4px 0 0;padding-left:18px;font-size:12px;color:#666a62}
+select,input[type=text]{font:inherit;font-size:13px;padding:2px 4px;border:1px solid #d9dcd3;border-radius:6px}
+</style></head><body>
+<h1>Pantry – capture</h1>
+<div id="stats"></div>
+<div id="batch"></div>
+<div id="missing"></div>
+<button class="p" id="json">Tout exporter (JSON, pour Claude)</button>
+<button id="csv">Commandes en CSV (Excel)</button>
+<button id="pcsv">Prix en CSV (Excel)</button>
+<p class="m">Une commande ouverte est lue automatiquement. Sur l'historique, un bouton permet de toutes les capturer. Sur les pages de produits (Mes articles, rabais, circulaire, listes, recherche), les prix affichés sont notés tout seuls.</p>
+<button class="d" id="clear">Tout effacer</button>
+<script src="popup.js"></script>
+</body></html>
