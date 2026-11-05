@@ -1,4 +1,4 @@
-PANTRY – CAPTURE (extension Chrome, version 0.3)
+PANTRY – CAPTURE (extension Chrome, version 0.5)
 ================================================
 
 À quoi ça sert
@@ -65,16 +65,46 @@ service (Flipp) et ne peut pas être lue. Utilisez All Deals à la place :
 ce sont les mêmes rabais.
 
 
+2a) Compléter les listes (à faire une fois, puis de temps en temps)
+------------------------------------------------------------------
+But : que tout ce que vous achetez régulièrement soit dans une liste, pour
+qu'une seule lecture de liste donne tous les prix.
+   1. Walmart : ouvrez My Items et cliquez « Tout lire ».
+      Maxi : ouvrez votre liste ListMaker et cliquez « Tout lire ».
+      (L'extension note ainsi ce qui est déjà dans chaque liste.)
+   2. Icône Pantry > « Compléter les listes » :
+      - « Walmart : N produits absents de My Items → les ajouter aux
+        Favourites » (My Items contient déjà presque tout : il en manque peu)
+      - « Maxi : ajouter N produits à ListMaker »
+      Une épicerie à la fois. Ignore les recherches faites avant : seul
+      compte « est-ce dans la liste ? ».
+   3. À la fin, refaites « Tout lire » sur la liste : le bouton doit
+      indiquer « complète » (sauf les produits introuvables).
+
+
 2b) Les produits manquants
 --------------------------
-Certains produits achetés ne sont dans aucune liste (surtout chez Maxi).
-Après avoir capturé l'historique et lu vos listes, cliquez l'icône Pantry :
-la carte « N produits achetés 2 fois ou plus sans prix récent » les montre.
-   - « Relever les produits manquants » : un nouvel onglet fait une recherche
-     par nom pour chacun, une à la fois, et note le prix s'il le retrouve.
-   - Ceux qui ne sont pas retrouvés (produit retiré, nom différent) sont
-     réessayés dans 30 jours. Astuce : ajoutez à vos favoris Maxi ceux que
-     vous achetez souvent ; votre liste deviendra votre référence complète.
+Certains produits achetés ne sont dans aucune liste.
+D'ABORD : lisez vos listes avec « Tout lire » (Walmart My Items, liste
+Maxi). Tout ce qui y est vu ne compte plus comme manquant.
+Ensuite, cliquez l'icône Pantry, section « Produits manquants » :
+   - Choisissez la période (par défaut : achetés dans les 12 derniers mois,
+     au moins 2 fois) ; les vieilles habitudes sont ignorées.
+   - Cochez « ajouter les produits trouvés à une liste » et vérifiez le nom
+     de la liste Maxi (ListMaker). Chez Walmart, c'est la liste Favourites.
+   - Cliquez « Relever les N produits Walmart » (ou Maxi). Une épicerie à
+     la fois. Un nouvel onglet cherche chaque produit par son nom ; s'il
+     retrouve EXACTEMENT le même produit (même code), il note le prix et
+     l'ajoute à la liste (Walmart : cœur ; Maxi : page du produit >
+     Add to List > ListMaker).
+   - Ajout seulement : rien n'est jamais retiré d'une liste ni mis au panier.
+     Un produit déjà dans la liste est laissé tel quel.
+   - À la fin, la carte « Dernier relevé des manquants » donne le bilan :
+     trouvés, non trouvés, ajoutés, déjà présents, problèmes.
+   - Les non-trouvés (produit retiré, nom différent) sont réessayés dans
+     30 jours.
+Résultat : ensuite, chaque semaine, il suffit de « Tout lire » sur My Items
+(Walmart) et sur ListMaker (Maxi) pour avoir tous les prix à jour.
 
 
 3) Exporter

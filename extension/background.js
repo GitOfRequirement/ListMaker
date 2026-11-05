@@ -14,15 +14,17 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 
 // Products bought at least `minTimes` times (in different orders) that have no price seen in the last `maxAge` days
 // and were not already searched recently.
-async function missing(minTimes = 2, maxAge = 14) {
+// `months`: only products bought at least once in the last N months (older habits are ignored).
+async function missing({ minTimes = 2, maxAge = 14, months = 12, store = null } = {}) {
   const all = await chrome.storage.local.get(null);
+  const since = day(-Math.round(months * 30.4));
   const fresh = day(-maxAge), seen = new Set(), counts = new Map();
   for (const [k, v] of Object.entries(all)) {
     if (k.startsWith('p:') && v.lastSeen >= fresh) [v.productId, ...(v.altIds || [])].forEach(id => seen.add(v.store + ':' + id));
     if (k.startsWith('m:') && v.d >= day(v.found ? -maxAge : -30)) seen.add(k.slice(2));
   }
   for (const [k, o] of Object.entries(all)) {
-    if (!k.startsWith('o:')) continue;
+    if (!k.startsWith('o:') || (store && o.store !== store)) continue;
     for (const l of o.lines) {
       if (!l.productId || l.section === 'fee' || l.section === 'unavailable') continue;
       const key = o.store + ':' + l.productId;
@@ -31,8 +33,36 @@ async function missing(minTimes = 2, maxAge = 14) {
       counts.set(key, c);
     }
   }
-  return [...counts.entries()].filter(([k, c]) => c.orders.size >= minTimes && !seen.has(k))
+  return [...counts.entries()].filter(([k, c]) => c.orders.size >= minTimes && c.last >= since && !seen.has(k))
     .map(([, c]) => ({ store: c.store, productId: c.productId, name: c.name, brand: c.brand, times: c.orders.size, last: c.last }))
+    .sort((a, b) => b.times - a.times);
+}
+
+// Products bought regularly (≥ minTimes orders, last one within `months`) that are not known to be in the target list.
+// Ignores price freshness and earlier searches: only list membership matters here.
+// Known membership comes from list/My Items pages read with the extension, and from earlier "added"/"already" results.
+async function notInList({ store, listName, minTimes = 2, months = 12 }) {
+  const all = await chrome.storage.local.get(null);
+  const since = day(-Math.round(months * 30.4)), want = String(listName || '').trim().toLowerCase();
+  // Walmart: a product on "My Items" is covered too (that page is re-read every week anyway).
+  const ok = store === 'Walmart' ? [want, 'my items'] : [want];
+  const inList = new Set(), counts = new Map();
+  for (const [k, v] of Object.entries(all)) {
+    if (k.startsWith('p:') && v.store === store && (v.inLists || []).some(n => ok.includes(n.trim().toLowerCase())))
+      [v.productId, ...(v.altIds || [])].forEach(id => inList.add(id));
+    if (k.startsWith('m:' + store + ':') && ['added', 'already'].includes(v.listResult) && (v.list || listName).toLowerCase() === want) inList.add(k.split(':').slice(2).join(':'));
+  }
+  for (const [k, o] of Object.entries(all)) {
+    if (!k.startsWith('o:' + store + ':')) continue;
+    for (const l of o.lines) {
+      if (!l.productId || l.section === 'fee' || l.section === 'unavailable') continue;
+      const c = counts.get(l.productId) || { store, productId: l.productId, name: l.name, brand: l.brand || '', orders: new Set(), last: '' };
+      c.orders.add(o.orderId); if ((o.orderDate || '') > c.last) { c.last = o.orderDate || ''; c.name = l.name; }
+      counts.set(l.productId, c);
+    }
+  }
+  return [...counts.values()].filter(c => c.orders.size >= minTimes && c.last >= since && !inList.has(c.productId))
+    .map(c => ({ store, productId: c.productId, name: c.name, brand: c.brand, times: c.orders.size, last: c.last }))
     .sort((a, b) => b.times - a.times);
 }
 
@@ -57,7 +87,10 @@ async function handle(msg, sender) {
     case 'captured': {
       if (!inBatch) return {};
       const cur = b.queue[b.i] || {};
-      if (cur.kind === 'search') await set('m:' + cur.store + ':' + cur.productId, { d: day(), found: !!msg.ok, name: cur.name, foundName: msg.foundName || '' });
+      if (cur.kind === 'search') {
+        await set('m:' + cur.store + ':' + cur.productId, { d: day(), found: !!msg.ok, name: cur.name, foundName: msg.foundName || '', listResult: msg.listResult || '', list: cur.addToList ? cur.listName : '' });
+        if (msg.listResult) { b.lists = b.lists || {}; b.lists[msg.listResult] = (b.lists[msg.listResult] || 0) + 1; }
+      }
       b.done++; if (!msg.ok) { b.failed++; b.errors.push({ url: msg.url, error: msg.error || 'non trouvé', name: cur.name || '' }); }
       b.i++;
       if (b.i >= b.queue.length) {
@@ -73,11 +106,21 @@ async function handle(msg, sender) {
       return startBatch(queue, 'Capture des commandes', 'order', sender.tab ? sender.tab.index + 1 : undefined);
     }
     case 'missing-list':
-      return { items: await missing(msg.minTimes || 2) };
+      return { items: await missing(msg.opts) };
     case 'missing-start': {
-      const items = (await missing(msg.minTimes || 2)).slice(0, msg.limit || 150);
-      const queue = items.map(it => ({ kind: 'search', store: it.store, productId: it.productId, name: it.name, url: (it.store === 'Maxi' ? P.maxi : P.walmart).searchUrl(it) }));
-      return startBatch(queue, 'Relevé des produits manquants', 'search');
+      const items = (await missing(msg.opts)).slice(0, msg.limit || 300);
+      const queue = items.map(it => ({ kind: 'search', store: it.store, productId: it.productId, name: it.name,
+        addToList: !!msg.addToList, listName: it.store === 'Maxi' ? (msg.listName || 'ListMaker') : 'Favourites',
+        url: (it.store === 'Maxi' ? P.maxi : P.walmart).searchUrl(it) }));
+      return startBatch(queue, `Relevé des produits manquants (${msg.opts && msg.opts.store || 'tous'})`, 'search');
+    }
+    case 'fill-list-count':
+      return { items: await notInList(msg.opts) };
+    case 'fill-list-start': {
+      const o = msg.opts, items = await notInList(o);
+      const queue = items.map(it => ({ kind: 'search', store: it.store, productId: it.productId, name: it.name, addToList: true, listName: o.listName,
+        url: (it.store === 'Maxi' ? P.maxi : P.walmart).searchUrl(it) }));
+      return startBatch(queue, `Compléter la liste ${o.listName} (${o.store})`, 'search');
     }
     case 'batch-stop': {
       if (b) { b.running = false; await set('batch', b); }

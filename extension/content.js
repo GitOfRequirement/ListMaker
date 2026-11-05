@@ -13,9 +13,16 @@
   const send = msg => new Promise(r => { try { chrome.runtime.sendMessage(msg, x => { void chrome.runtime.lastError; r(x || {}); }); } catch (e) { r({}); } });
 
   // ---------- small floating panel (shadow DOM so the site's CSS can't touch it) ----------
-  let host, msgEl, btnRow, closed = false;
+  // The panel is added only once the page has fully loaded + 3 s: these sites are React/Next.js apps, and an
+  // element inserted while they "hydrate" the page can make them crash ("Application error: a client-side exception").
+  let host, msgEl, btnRow, closed = false, uiReady = false, pendingSay = null;
+  (() => {
+    const go = () => setTimeout(() => { uiReady = true; if (pendingSay) say(...pendingSay); }, 3000);
+    if (document.readyState === 'complete') go(); else addEventListener('load', go, { once: true });
+  })();
   function say(m, buttons) {
     if (closed) return;
+    if (!uiReady) { pendingSay = [m, buttons]; return; }
     if (!host || !host.isConnected) {
       host = document.createElement('div');
       host.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647';
@@ -28,7 +35,7 @@
         <div class="b"><button class="x" title="Fermer">×</button><div class="t">Pantry</div><div class="m"></div><div class="r"></div></div>`;
       sh.querySelector('.x').onclick = () => { closed = true; host.remove(); };
       msgEl = sh.querySelector('.m'); btnRow = sh.querySelector('.r');
-      document.documentElement.appendChild(host);
+      (document.body || document.documentElement).appendChild(host);
     }
     msgEl.textContent = m; btnRow.replaceChildren();
     (buttons || []).forEach(([label, fn, primary]) => {
@@ -96,7 +103,66 @@
     await scanProducts();
     const hit = site.products(document).find(p => p.productId === target.productId || p.altIds.includes(target.productId));
     say(hit ? `✓ Trouvé : ${hit.name} à ${hit.price} $.` : '⚠ Produit pas dans les résultats (peut-être plus vendu, ou nom différent).');
-    await batchNext(!!hit, { productId: target.productId, store: target.store, foundName: hit ? hit.name : '' });
+    let listResult = '';
+    if (hit && target.addToList) {
+      if (site.store === 'Walmart') listResult = await addWalmartFavourite(hit);
+      else if (hit.url) {
+        // Maxi: the "Add to List" menu is on the product page. Go there; the add happens on arrival.
+        try { sessionStorage.setItem(ADD, JSON.stringify({ sku: hit.productId, list: target.listName, name: hit.name, until: Date.now() + 60e3 })); } catch (e) {}
+        say(`✓ Trouvé : ${hit.name}. Ouverture de sa page pour l'ajouter à « ${target.listName} »…`);
+        await sleep(1500 + Math.random() * 1500);
+        location.href = hit.url;
+        return;
+      } else listResult = 'no-url';
+    }
+    await batchNext(!!hit, { productId: target.productId, store: target.store, foundName: hit ? hit.name : '', listResult });
+  }
+
+  // ---------- add a product to a list (only ever adds; never removes, never touches the cart) ----------
+  const ADD = 'pantryAddToList';
+
+  // Walmart: the heart button on the product tile toggles the Favourites list.
+  async function addWalmartFavourite(hit) {
+    const ids = [hit.productId, ...hit.altIds];
+    const tile = [...document.querySelectorAll('[role="group"][data-item-id]')].find(g =>
+      ids.includes(g.getAttribute('data-item-id')) || [...g.querySelectorAll('a[href*="/ip/"]')].some(a => ids.some(id => a.getAttribute('href').includes('/' + id))));
+    const heart = tile && tile.querySelector('[data-automation-id="heart-item"]');
+    if (!heart) return 'no-button';
+    const label = () => heart.getAttribute('aria-label') || '';
+    if (/^Remove from/i.test(label())) return 'already';
+    if (!/^Add to/i.test(label())) return 'unknown-button';
+    heart.click();
+    for (let i = 0; i < 16; i++) { await sleep(400); if (/^Remove from/i.test(label())) return 'added'; }
+    return 'not-confirmed';
+  }
+
+  // Maxi product page: "Add to List" opens a menu of the account's lists; each entry says whether the product is in it.
+  async function addMaxiList(p) {
+    let group = null;
+    for (let i = 0; i < 30 && !group; i++) {
+      group = [...document.querySelectorAll('.product-button-group')].find(g =>
+        g.querySelector('.add-to-list-button') && (g.querySelector('[data-track-products-array]') || {}).getAttribute?.('data-track-products-array')?.includes(p.sku));
+      if (!group) await sleep(500);
+    }
+    if (!group) return 'no-button';
+    const entry = () => [...group.querySelectorAll('.shopping-list-button')].find(b => clean(b.textContent).toLowerCase() === String(p.list || '').trim().toLowerCase());
+    // Open the menu (its entries may already be in the page, but hidden), then wait for our list's entry.
+    group.querySelector('.add-to-list-button').click(); await sleep(800);
+    for (let i = 0; i < 12 && !entry(); i++) await sleep(400);
+    const b = entry();
+    if (!b) return 'list-not-found';
+    if (/--with-product/.test(b.className)) return 'already';
+    b.click();
+    for (let i = 0; i < 16; i++) { await sleep(400); const e = entry(); if (e && /--with-product/.test(e.className)) return 'added'; }
+    return 'not-confirmed';
+  }
+
+  async function finishMaxiAdd(p) {
+    say(`Ajout de « ${p.name} » à la liste « ${p.list} »…`);
+    const r = await addMaxiList(p);
+    const words = { added: '✓ Ajouté à la liste', already: '✓ Déjà dans la liste', 'list-not-found': `⚠ Liste « ${p.list} » introuvable dans le menu`, 'no-button': '⚠ Bouton « Add to List » introuvable', 'not-confirmed': '⚠ Ajout non confirmé' };
+    say(`${words[r] || r} : ${p.name}.`);
+    await batchNext(true, { productId: p.sku, store: 'Maxi', foundName: p.name, listResult: r });
   }
 
   // ---------- history page ----------
@@ -150,7 +216,7 @@
   const sig = new Map(); let pageCount = 0;
   async function scanProducts() {
     const found = site.products(document).filter(p => p.productId && p.price != null);
-    const fresh = found.filter(p => { const s = [p.price, p.wasPrice, p.unitPrice, p.deal].join('|'); if (sig.get(p.productId) === s) return false; sig.set(p.productId, s); return true; });
+    const fresh = found.filter(p => { const s = [p.price, p.wasPrice, p.unitPrice, p.deal, (p.inLists || []).join('+')].join('|'); if (sig.get(p.productId) === s) return false; sig.set(p.productId, s); return true; });
     if (!fresh.length) return;
     const keys = fresh.map(p => 'p:' + site.store + ':' + p.productId);
     const old = await chrome.storage.local.get(keys);
@@ -161,6 +227,13 @@
       rec.name = p.name || rec.name; rec.brand = p.brand || rec.brand || ''; rec.size = p.size || rec.size || '';
       rec.url = p.url || rec.url; rec.lastSeen = d; if (p.bought) rec.bought = p.bought;
       rec.altIds = [...new Set([...(rec.altIds || []), ...p.altIds])];
+      // Walmart "My Items" already lists every product bought: being on it counts as being in a list.
+      const onMyItems = site.store === 'Walmart' && (/my-items/i.test(location.pathname) || /my items/i.test(document.title));
+      if (Array.isArray(p.inLists) || onMyItems) {
+        const prevMy = (rec.inLists || []).includes('My Items');
+        rec.inLists = [...new Set([...(p.inLists || rec.inLists || []), ...(onMyItems || prevMy ? ['My Items'] : [])])];
+        rec.listsSeen = d;
+      }
       const ob = { d, price: p.price, wasPrice: p.wasPrice, unitPrice: p.unitPrice, unitBase: p.unitBase, unitRaw: p.unitRaw, deal: p.deal, dealText: p.dealText, expiry: p.expiry, src };
       const same = rec.obs.findIndex(o => o.d === d);
       if (same >= 0) rec.obs[same] = ob; else rec.obs.push(ob);
@@ -221,8 +294,15 @@
     if (walking || reading || location.href === lastUrl) return;
     lastUrl = location.href;
     clearInterval(productTimer); sig.clear();
+    // Maxi home page: hands off completely (nothing useful there, and it crashed with the panel on it).
+    if (site.store === 'Maxi' && /^\/(en|fr)?\/?$/.test(location.pathname)) { if (host) host.remove(); return; }
     const hello = await send({ type: 'hello', url: location.href });
-    if (hello.batch && hello.kind === 'search') { inSearchBatch = true; captureSearch(hello); return; }
+    if (hello.batch && hello.kind === 'search') {
+      inSearchBatch = true;
+      let pend = null; try { pend = JSON.parse(sessionStorage.getItem(ADD) || 'null'); sessionStorage.removeItem(ADD); } catch (e) {}
+      if (pend && pend.until > Date.now() && location.href.includes('/p/' + pend.sku)) { finishMaxiAdd(pend); return; }
+      captureSearch(hello); return;
+    }
     if (site.isOrderPage(location.href)) { captureOrder(hello); return; }
     // History pages render their list late: try a few times.
     for (let i = 0; i < 6 && location.href === lastUrl; i++) { if (await offerBatch()) return; await sleep(1500); }

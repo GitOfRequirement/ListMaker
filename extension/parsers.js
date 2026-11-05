@@ -162,6 +162,8 @@
           dealText: (t.match(/You save\s*\$\s*[\d.,]+/i) || [''])[0],
           expiry: '',
           bought: bought ? bought[1] : '',
+          // Heart button: "Remove from Favourites list…" means the product is already a favourite.
+          inLists: (h => h ? (/^Remove from/i.test(h.getAttribute('aria-label') || '') ? ['Favourites'] : []) : null)(g.querySelector('[data-automation-id="heart-item"]')),
           url: new URL(href, 'https://www.walmart.ca').href.split('?')[0]
         });
       });
@@ -265,6 +267,8 @@
           wasPrice: was ? money(text(was)) : null,
           ...unitPrice(text(cmp)),
           deal: dealT.toLowerCase(), dealText: badge, expiry: exp.replace(/^Exp\.?\s*/i, ''),
+          // The tile's "Add to List" menu marks the lists that already contain the product.
+          inLists: (bs => bs.length ? bs.filter(b => /--with-product/.test(b.className)).map(text) : null)([...tile.querySelectorAll('.shopping-list-button')]),
           bought: '',
           url: new URL(href, 'https://www.maxi.ca').href.split('?')[0]
         });
