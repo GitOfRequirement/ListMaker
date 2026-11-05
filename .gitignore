@@ -1,0 +1,12 @@
+# Saved web pages contain personal data (name, address, phone, order numbers, card digits).
+# Never publish them.
+Exemples de pages/
+*_files/
+Order details - Walmart.ca.html
+Past Order _ Maxi.html
+
+# Exports from the extension and the app's data file (personal purchase history, prices)
+pantry-*.json
+pantry-*.csv
+# Classification workbooks (same data)
+*.xlsx
