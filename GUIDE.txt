@@ -1,0 +1,82 @@
+PANTRY – GUIDE D'UTILISATION
+============================
+
+App : https://gitofrequirement.github.io/ListMaker/
+(sur le téléphone : l'ajouter à l'écran d'accueil depuis le navigateur)
+
+Trois outils, un seul ensemble de données :
+  - TÉLÉPHONE : compter ce qu'il reste, voir la liste.
+  - ORDINATEUR : comparer les prix, choisir, organiser les articles.
+  - EXTENSION CHROME (ordinateur) : lit les prix et les commandes sur
+    walmart.ca et maxi.ca.
+Les articles, quantités, comptes et choix se synchronisent entre appareils.
+Les prix restent sur l'ordinateur.
+
+
+CHAQUE SEMAINE
+--------------
+1. COMPTER (téléphone, onglet Count)
+   Choisir un endroit en haut (Fridge (main), Pantry (top)…), toucher le
+   nombre qu'il reste pour chaque article. Les comptes restent en mémoire :
+   on ne corrige que ce qui a changé. « All good » = tout est plein.
+   Les articles qui varient le plus remontent d'eux-mêmes en haut.
+
+2. METTRE LES PRIX À JOUR (ordinateur, Chrome)
+   - walmart.ca > My Items : cliquer « Tout lire » dans l'encadré vert.
+   - maxi.ca > votre liste ListMaker : « Tout lire ».
+   - (facultatif) Maxi > All Deals, Walmart > Weekly Flyer : « Tout lire ».
+   - Dans l'app, onglet Compare : « Import prices from the extension ».
+
+3. COMPARER ET CHOISIR (ordinateur, onglet Compare)
+   Pour chaque article à acheter, l'app propose le produit selon son mode :
+     Cheapest   le moins cher au kilo / litre / unité
+     Variety    2 à 4 options proches du meilleur prix, en alternance
+     Exactly    seulement le produit marqué ★ (ex. le bouillon Imagine)
+   Ajuster au besoin avec − / +. « Back to proposal » annule.
+   ☆ = produit préféré · « Never this one » = ne plus jamais le proposer.
+   Section « On sale this week » : articles achetés seulement en rabais.
+
+4. COMMANDER (ordinateur ou téléphone)
+   En bas de Compare, un panier Walmart et un panier Maxi :
+   « Open all pages » ouvre chaque produit pour l'ajouter au panier du site,
+   « Copy » copie la liste (quantité + nom).
+   Sur le téléphone, l'onglet List montre les mêmes choix, avec les liens.
+   Cocher un article dans List le retire des paniers.
+
+
+DE TEMPS EN TEMPS
+-----------------
+- Fruits de saison (maïs, melon d'eau…) : onglet List, section
+  « In season? », bouton « Add ».
+- ORGANIZE (ordinateur) : modifier un article (nom, endroits, quantités,
+  mode), gérer ses produits, et rattacher des produits vus par l'extension
+  (zone « Add products seen by the extension »). Cocher « to fix only »
+  montre ce qui manque (pas de produit, pas de prix…).
+- Nouveaux produits achetés souvent : extension > icône Pantry >
+  « Compléter les listes » (voir extension\LISEZMOI.txt).
+- Endroits de la maison : onglet Setup > Areas.
+
+
+PREMIÈRE FOIS (une seule fois)
+------------------------------
+1. Ordinateur : Setup > Import > choisir pantry-data-v2.json.
+2. Setup > Sync between devices : coller la configuration Firebase,
+   se connecter (même courriel sur tous les appareils).
+3. Téléphone : ouvrir l'app, Setup > Sync, se connecter. Les articles
+   arrivent tout seuls.
+4. Extension Chrome installée sur l'ordinateur (extension\LISEZMOI.txt).
+
+
+SI ÇA BLOQUE
+------------
+- Sync : « permission-denied » → dans la console Firebase, Firestore >
+  Règles, autoriser les sous-dossiers de l'utilisateur :
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth.uid == uid;
+    }
+- Le bouton « Import prices from the extension » n'apparaît pas →
+  extension à jour (0.6 ou plus) et page de l'app rechargée (F5).
+- Un produit n'a pas de prix au kilo → il passe en fin de liste ; relire
+  My Items ou la liste Maxi avec « Tout lire ».
+- Les totaux des paniers sont des estimations (poids variables, frais de
+  livraison non inclus ; Maxi demande 30 $ minimum).

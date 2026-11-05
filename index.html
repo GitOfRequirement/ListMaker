@@ -184,10 +184,19 @@ function listRows() {
   return rows.sort((r1, r2) => byAisle(r1.i, r2.i));
 }
 const copy = t => { try { navigator.clipboard.writeText(t); MSG = 'Copied.'; } catch (e) { MSG = 'Copy failed.'; } };
+// Products chosen in Compare (on the computer) for this item, if recent: [{p, n}]; null = use the usual products.
+function picked(i) {
+  const pk = DB.picks; if (!pk || !pk.items || !pk.items[i] || Date.now() - pk.at > 14 * 864e5) return null;
+  const out = Object.entries(pk.items[i]).map(([k, n]) => ({ p: DB.products[k], n })).filter(x => x.p && x.n > 0);
+  return out.length ? out : null;
+}
 function vList() {
   const v = $('div'), rows = listRows();
   let nc = 0; Object.keys(DB.items).forEach(i => { if (it(i).follow === 'normal') nc += unc(i).length; });
-  const forStore = s => rows.filter(r => !DB.checked[r.i]).map(r => { const p = usual(r.i, s); return p ? r.q + '\t' + pname(p) : null; }).filter(Boolean).join('\n');
+  // Per store: the products chosen in Compare when there are some, otherwise the usual product at that store.
+  const forStore = s => rows.filter(r => !DB.checked[r.i]).flatMap(r => { const pk = picked(r.i);
+    if (pk) return pk.filter(x => x.p.store === s).map(x => x.n + '\t' + pname(x.p));
+    const p = usual(r.i, s); return p ? [r.q + '\t' + pname(p)] : []; }).join('\n');
   v.append($('div', { className: 'bar' }, $('b', { textContent: rows.length + ' item' + (rows.length === 1 ? '' : 's') + ' to buy' }),
     $('button', { className: 'sm', textContent: 'Copy list', title: 'quantity <tab> item, one per line', onclick: () => { copy(rows.filter(r => !DB.checked[r.i]).map(r => r.q + '\t' + it(r.i).name).join('\n')); draw(); } }),
     $('button', { className: 'sm', textContent: 'Copy for Walmart', onclick: () => { copy(forStore('Walmart')); draw(); } }),
@@ -195,16 +204,19 @@ function vList() {
     $('button', { className: 'sm', textContent: 'Clear ticks', onclick: () => { DB.checked = {}; save(); draw(); } })));
   if (MSG) { v.append($('p', { className: 'm', textContent: MSG })); MSG = ''; }
   if (nc) v.append($('p', { className: 'w', textContent: nc + ' item slot' + (nc === 1 ? '' : 's') + ' not counted yet, so this list may be longer than needed.' }));
+  if (rows.some(r => picked(r.i))) v.append($('p', { className: 'm', textContent: 'Products chosen in Compare on ' + new Date(DB.picks.at).toLocaleString() + '. Items without a choice show the usual products.' }));
   let lastA = null;
   rows.forEach(({ i, q, extra }) => {
     const x = it(i), ck = !!DB.checked[i];
     if (x.aisle !== lastA) { lastA = x.aisle; v.append($('div', { className: 'aisle', textContent: x.aisle || 'Other' })); }
-    const pw = usual(i, 'Walmart'), pm = usual(i, 'Maxi');
+    const pw = usual(i, 'Walmart'), pm = usual(i, 'Maxi'), pk = picked(i);
     v.append($('div', { className: 'card li' + (ck ? ' done' : '') },
       $('input', { type: 'checkbox', checked: ck, onchange: e => { if (e.target.checked) DB.checked[i] = true; else delete DB.checked[i]; save(); draw(); } }),
       $('div', { className: 'qty', textContent: q }),
       $('div', { className: 'body' }, $('div', { className: 'nm' }, x.name, extra ? $('span', { className: 'tag', textContent: x.follow === 'seasonal' ? 'seasonal' : 'on sale' }) : '', x.match === 'preferred' ? $('span', { className: 'tag', textContent: 'exactly this' }) : ''),
-        pw ? $('div', { className: 'prod', textContent: 'Walmart: ' + pname(pw) }) : '', pm ? $('div', { className: 'prod', textContent: 'Maxi: ' + pname(pm) }) : ''),
+        ...(pk ? pk.map(x => $('div', { className: 'prod' }, $('span', { className: 'st ' + x.p.store[0], textContent: x.p.store }), ' ' + x.n + '× ',
+            x.p.url ? $('a', { href: x.p.url, target: '_blank', rel: 'noopener', textContent: pname(x.p) }) : pname(x.p)))
+          : [pw ? $('div', { className: 'prod', textContent: 'Walmart: ' + pname(pw) }) : '', pm ? $('div', { className: 'prod', textContent: 'Maxi: ' + pname(pm) }) : ''])),
       $('button', { className: 'sm', textContent: 'Copy', title: 'Copy the item name', onclick: () => { copy(x.name); draw(); } })));
   });
   if (!rows.length) v.append($('p', { className: 'm', textContent: 'Nothing to buy. Count your areas first.' }));
@@ -383,13 +395,17 @@ function syncUI() {
 }
 
 /* ================================== PRICES & COMPARE ==================================
-   Prices live on this computer only (PRICES, CATALOG and PLAN in localStorage).
-   CATALOG = products seen by the extension but not linked to an item yet (kept apart so the synced data stays small).
-   PLAN    = this week's choices made by hand: {itemId: {productKey: qty}}; empty = the app's proposal.
+   Prices live on this computer only (PRICES and CATALOG in localStorage).
+   CATALOG  = products seen by the extension but not linked to an item yet (kept apart so the synced data stays small).
+   DB.plan  = this week's choices made by hand in Compare: {itemId: {productKey: qty}}; empty = the app's proposal. Synced.
+   DB.picks = what Compare finally chose for each item on the list, {at, items: {itemId: {productKey: qty}}}. Synced, so the
+              phone's List shows the products chosen on the computer (the phone has no prices to work them out itself).
    ====================================================================================== */
-const CKEY = 'pantry_catalog', PLKEY = 'pantry_plan';
-let CATALOG = load(CKEY) || {}, PLAN = load(PLKEY) || {};
-const saveLocal = () => { try { localStorage.setItem(CKEY, JSON.stringify(CATALOG)); localStorage.setItem(PLKEY, JSON.stringify(PLAN)); } catch (e) { alert('Could not store on this computer: ' + e.message); } };
+const CKEY = 'pantry_catalog';
+let CATALOG = load(CKEY) || {};
+const PL = () => DB.plan || (DB.plan = {});
+(() => { const old = load('pantry_plan'); if (old && Object.keys(old).length && !Object.keys(PL()).length) { DB.plan = old; persist(); } try { localStorage.removeItem('pantry_plan'); } catch (e) {} })();
+const saveLocal = () => { try { localStorage.setItem(CKEY, JSON.stringify(CATALOG)); } catch (e) { alert('Could not store on this computer: ' + e.message); } };
 const S = () => Object.assign({ varietyGap: 0.2, dealGap: 0.2, staleDays: 10 }, DB.settings || {});
 const isoAgo = d => new Date(Date.now() - d * 864e5).toISOString().slice(0, 10);
 const median = a => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
@@ -445,7 +461,7 @@ function propose(i, qty) {
   const out = {}; for (let n = 0; n < qty; n++) { const o = pool[n % pool.length]; out[o.k] = (out[o.k] || 0) + 1; }
   return out;
 }
-const planOf = (i, qty) => PLAN[i] && Object.keys(PLAN[i]).length ? PLAN[i] : propose(i, qty);
+const planOf = (i, qty) => i in PL() ? PL()[i] : propose(i, qty);   // a manual choice (even "none") wins over the proposal
 const fmtU = q => q && q.unit != null ? money(q.unit) + '/' + q.base : '';
 
 // ---- import an export of the extension: new prices for known products, unknown ones go to the local catalog ----
@@ -472,31 +488,53 @@ function importExtension(o) {
   return pts + ' new price points · ' + upd + ' known products updated · ' + cat + ' new products put aside (not linked to an item yet).';
 }
 
+// ---- direct link with the Chrome extension (its bridge.js runs on this app's address) ----
+let EXT = null;   // {version} once the extension said hello
+const extWaiters = {};
+addEventListener('message', e => {
+  if (e.source !== window || e.origin !== location.origin) return;
+  const m = e.data || {}; if (m.source !== 'pantry-extension') return;
+  if (m.type === 'hello') { const first = !EXT; EXT = { version: m.version }; if (first && tab === 'compare') draw(); }
+  if (m.type === 'export' && extWaiters[m.id]) { extWaiters[m.id](m); delete extWaiters[m.id]; }
+});
+postMessage({ source: 'pantry-app', type: 'ping' }, location.origin);
+function importFromExtension() {
+  const id = Math.random().toString(36).slice(2);
+  MSG = 'Reading the extension…'; draw();
+  new Promise((res, rej) => { extWaiters[id] = res; setTimeout(() => { if (extWaiters[id]) { delete extWaiters[id]; rej(new Error('the extension did not answer')); } }, 30000);
+    postMessage({ source: 'pantry-app', type: 'export-request', id }, location.origin); })
+    .then(m => { if (m.error) throw new Error(m.error); MSG = 'From the extension: ' + importExtension(m.data); })
+    .catch(er => { MSG = 'Import failed: ' + er.message; })
+    .then(() => draw());
+}
+
 function vCompare() {
   const v = $('div'), rows = listRows(), st = S();
   const file = $('input', { type: 'file', accept: '.json,application/json', onchange: async e => { const f = e.target.files[0]; if (!f) return; try { MSG = importExtension(JSON.parse(await f.text())); } catch (er) { MSG = 'That file could not be read: ' + er.message; } draw(); } });
   const newest = Object.values(PRICES).reduce((m, s) => s.length && s[s.length - 1][0] > m ? s[s.length - 1][0] : m, '');
   v.append($('div', { className: 'card' },
     $('div', { className: 'bar' }, $('b', { textContent: 'Prices up to ' + (newest || '—') + ' · ' + Object.keys(PRICES).length + ' products with prices' }),
-      $('label', { className: 'm' }, 'Update from an extension export: ', file)),
+      EXT ? $('button', { className: 'pri', textContent: 'Import prices from the extension', title: 'Extension ' + EXT.version + ' found in this browser', onclick: importFromExtension }) : '',
+      $('label', { className: 'm' }, EXT ? 'or from a file: ' : 'Update from an extension export (file): ', file)),
     $('div', { className: 'row m' }, 'Variety: options up to ', $('input', { type: 'number', min: 0, max: 100, value: Math.round(st.varietyGap * 100), style: 'width:70px;flex:none', onchange: e => { DB.settings = Object.assign({}, DB.settings, { varietyGap: (+e.target.value || 0) / 100 }); save(); draw(); } }),
       '% above the best price · a deal = ', $('input', { type: 'number', min: 0, max: 100, value: Math.round(st.dealGap * 100), style: 'width:70px;flex:none', onchange: e => { DB.settings = Object.assign({}, DB.settings, { dealGap: (+e.target.value || 0) / 100 }); save(); draw(); } }),
       '% under the usual price'),
     MSG ? $('p', { className: 'm', textContent: MSG }) : ''));
   MSG = '';
   if (!rows.length) v.append($('p', { className: 'm', textContent: 'Nothing on the shopping list. Count your areas first (or add seasonal items from the List tab).' }));
-  const basket = { Walmart: [], Maxi: [] };
+  const basket = { Walmart: [], Maxi: [] }, picks = {};
   let lastA = null;
   rows.forEach(({ i, q }) => {
-    const x = it(i), mode = modeOf(x), cs = candidates(i), plan = planOf(i, q), manual = !!(PLAN[i] && Object.keys(PLAN[i]).length);
+    const x = it(i), mode = modeOf(x), cs = candidates(i), plan = planOf(i, q), manual = i in PL();
     const chosen = Object.values(plan).reduce((s, n) => s + n, 0);
+    if (chosen) picks[i] = plan;
     if (x.aisle !== lastA) { lastA = x.aisle; v.append($('div', { className: 'aisle', textContent: x.aisle || 'Other' })); }
-    const setPlan = (k, n) => { const p = Object.assign({}, planOf(i, q)); if (n > 0) p[k] = n; else delete p[k]; PLAN[i] = p; saveLocal(); draw(); };
+    const setPlan = (k, n) => { const p = Object.assign({}, planOf(i, q)); if (n > 0) p[k] = n; else delete p[k]; PL()[i] = p; save(); draw(); };
     const card = $('div', { className: 'card' },
       $('div', { className: 'ihead' }, $('div', { className: 'qty', textContent: q }), $('div', { className: 'nm', textContent: x.name }),
-        $('select', { onchange: e => { const m = e.target.value; if (m === 'exact') x.match = 'preferred'; else { x.match = 'any'; x.choice = m; } delete PLAN[i]; saveLocal(); save(); draw(); } },
+        $('select', { onchange: e => { const m = e.target.value; if (m === 'exact') x.match = 'preferred'; else { x.match = 'any'; x.choice = m; } delete PL()[i]; saveLocal(); save(); draw(); } },
           ...[['cheapest', 'Cheapest'], ['variety', 'Variety'], ['exact', 'Exactly this one']].map(([val, l]) => $('option', { value: val, textContent: l, selected: mode === val }))),
-        manual ? $('button', { className: 'sm', textContent: 'Back to proposal', onclick: () => { delete PLAN[i]; saveLocal(); draw(); } }) : '',
+        manual ? $('button', { className: 'sm', textContent: 'Back to proposal', onclick: () => { delete PL()[i]; save(); draw(); } }) : '',
         chosen !== q ? $('span', { className: 'w', textContent: chosen + ' of ' + q + ' chosen' }) : ''));
     if (!cs.length) card.append($('p', { className: 'w', textContent: mode === 'exact' ? 'No preferred product with a price. Mark one with ★ (Find tab) or switch the mode.' : 'No price for this item yet: read the stores’ pages with the extension, then import.' }));
     const show = cs.slice(0, Math.max(5, Object.keys(plan).length));
@@ -510,7 +548,7 @@ function vCompare() {
           qt.onSale ? $('span', { className: 'deal', textContent: ' on sale' + (qt.off ? ' −' + Math.round(qt.off * 100) + '%' : '') }) : '',
           $('div', { className: 'old', textContent: (qt.src === 'order' ? 'paid ' : 'seen ') + qt.date + (qt.stale ? ' (old price)' : '') + (qt.usual ? ' · usual ' + money(qt.usual) + '/' + qt.base : '') }),
           $('span', { className: 'mini' }, $('button', { textContent: o.p.status === 'preferred' ? '★ preferred' : '☆', title: 'Preferred product', onclick: () => { o.p.status = o.p.status === 'preferred' ? 'ok' : 'preferred'; save(); draw(); } }),
-            $('button', { textContent: 'Never this one', onclick: () => { if (confirm('Exclude "' + pname(o.p) + '" from future comparisons?')) { o.p.status = 'excluded'; if (PLAN[i]) delete PLAN[i][o.k]; saveLocal(); save(); draw(); } } }))),
+            $('button', { textContent: 'Never this one', onclick: () => { if (confirm('Exclude "' + pname(o.p) + '" from future comparisons?')) { o.p.status = 'excluded'; if (PL()[i]) delete PL()[i][o.k]; saveLocal(); save(); draw(); } } }))),
         $('div', { className: 'num', textContent: money(qt.price) }),
         $('div', { className: 'num u', textContent: fmtU(qt) }),
         $('div', { className: 'step' }, $('button', { textContent: '−', onclick: () => setPlan(o.k, n - 1) }), $('b', { textContent: n }), $('button', { textContent: '+', onclick: () => setPlan(o.k, n + 1) }))));
@@ -518,6 +556,9 @@ function vCompare() {
     if (cs.length > show.length) card.append($('div', { className: 'm', textContent: (cs.length - show.length) + ' more option(s), more expensive.' }));
     v.append(card);
   });
+
+  // Share the final choices with the other devices (only when they changed, to avoid useless syncs).
+  if (JSON.stringify(picks) !== JSON.stringify((DB.picks || {}).items || {})) { DB.picks = { at: Date.now(), items: picks }; save(); }
 
   // Items followed "only when on sale" that are significantly under their usual price now.
   const deals = Object.keys(DB.items).filter(i => it(i).follow === 'deal').map(i => ({ i, c: candidates(i).find(o => o.q.onSale && !o.q.stale) })).filter(d => d.c);
@@ -573,7 +614,7 @@ function prodLine(k, p, i) {
     $('div', { className: 'acts row', style: 'margin:0' },
       $('select', { onchange: e => { p.status = e.target.value; save(); draw(); } }, ...[['preferred', '★ Preferred'], ['ok', 'OK'], ['new', 'New'], ['excluded', '✕ Never']].map(([v, l]) => $('option', { value: v, textContent: l, selected: p.status === v }))),
       mv, $('button', { className: 'sm', textContent: 'Move', onclick: () => { const id = itemByName(mv.value); if (!id) { alert('Choose an existing item from the list.'); return; } p.item = id; save(); draw(); } }),
-      $('button', { className: 'sm', textContent: 'Unlink', title: 'Put this product aside (it stays in the catalog)', onclick: () => { CATALOG[k] = Object.assign({}, p, { item: null }); delete DB.products[k]; Object.values(PLAN).forEach(pl => delete pl[k]); saveLocal(); save(); draw(); } })));
+      $('button', { className: 'sm', textContent: 'Unlink', title: 'Put this product aside (it stays in the catalog)', onclick: () => { CATALOG[k] = Object.assign({}, p, { item: null }); delete DB.products[k]; Object.values(PL()).forEach(pl => delete pl[k]); saveLocal(); save(); draw(); } })));
   return r;
 }
 function vOrganize() {
@@ -614,7 +655,7 @@ function vOrganize() {
         $('label', { style: 'grid-column:1/-1' }, 'Name', $('input', { type: 'text', value: x.name, onchange: e => { const n = e.target.value.trim(); if (n) set('name', n); } })),
         $('label', {}, 'Aisle', $('select', { onchange: e => set('aisle', e.target.value) }, $('option', { value: '', textContent: '—' }), ...AISLES.map(a => $('option', { value: a, textContent: a, selected: x.aisle === a })))),
         $('label', {}, 'Follow-up', $('select', { onchange: e => set('follow', e.target.value) }, ...FOLLOWS.map(([vv, l]) => $('option', { value: vv, textContent: l, selected: x.follow === vv })))),
-        $('label', {}, 'Choice', $('select', { onchange: e => { const m = e.target.value; if (m === 'exact') x.match = 'preferred'; else { x.match = 'any'; x.choice = m; } delete PLAN[i]; saveLocal(); save(); draw(); } },
+        $('label', {}, 'Choice', $('select', { onchange: e => { const m = e.target.value; if (m === 'exact') x.match = 'preferred'; else { x.match = 'any'; x.choice = m; } delete PL()[i]; saveLocal(); save(); draw(); } },
           ...MODES.map(([vv, l]) => $('option', { value: vv, textContent: l, selected: modeOf(x) === vv })))),
         $('label', {}, 'Target price', $('input', { type: 'number', step: '0.01', min: 0, value: x.targetPrice == null ? '' : x.targetPrice, onchange: e => set('targetPrice', e.target.value === '' ? null : +e.target.value) }))),
       $('h3', { textContent: 'Wanted in each area (total ' + total(i) + ')' }),
@@ -624,7 +665,7 @@ function vOrganize() {
       $('div', { className: 'row' }, x.stats ? $('span', { className: 'm', textContent: 'Bought in ' + x.stats.b12 + ' orders over 12 months · usually ' + x.stats.q + ' at a time' }) : '',
         $('button', { className: 'sm', textContent: 'Delete item', onclick: () => { if (!confirm('Delete "' + x.name + '"? Its products are put aside (catalog), its counts are removed.')) return;
           prodsOf(i).forEach(([k, p]) => { CATALOG[k] = Object.assign({}, p, { item: null }); delete DB.products[k]; });
-          delete DB.items[i]; Object.values(DB.counts).forEach(m => delete m[i]); delete DB.checked[i]; delete DB.extra[i]; delete PLAN[i]; OSEL = ''; saveLocal(); save(); draw(); } }))));
+          delete DB.items[i]; Object.values(DB.counts).forEach(m => delete m[i]); delete DB.checked[i]; delete DB.extra[i]; delete PL()[i]; OSEL = ''; saveLocal(); save(); draw(); } }))));
     const ps = prodsOf(i);
     right.append($('div', { className: 'card' }, $('h3', { style: 'margin-top:0', textContent: ps.length + ' product' + (ps.length === 1 ? '' : 's') + ' compared for this item' }),
       ...ps.map(([k, p]) => prodLine(k, p, i)), ps.length ? '' : $('p', { className: 'm', textContent: 'None yet: link some below.' })));
