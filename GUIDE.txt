@@ -60,10 +60,10 @@ DE TEMPS EN TEMPS
 PREMIÈRE FOIS (une seule fois)
 ------------------------------
 1. Ordinateur : Setup > Import > choisir pantry-data-v2.json.
-2. Setup > Sync between devices : coller la configuration Firebase,
-   se connecter (même courriel sur tous les appareils).
-3. Téléphone : ouvrir l'app, Setup > Sync, se connecter. Les articles
-   arrivent tout seuls.
+2. Setup > Sync between devices : la configuration Firebase est déjà
+   remplie ; entrer le courriel et le mot de passe, « Sign in ».
+3. Téléphone (et tout autre appareil) : ouvrir l'app, Setup > Sync,
+   même courriel et mot de passe. Les articles arrivent tout seuls.
 4. Extension Chrome installée sur l'ordinateur (extension\LISEZMOI.txt).
 
 

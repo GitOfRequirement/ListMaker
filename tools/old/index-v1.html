@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2d6a4f"><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png">
+<title>Pantry</title>
+<style>
+:root{--bg:#f6f7f4;--fg:#1c1d1a;--mut:#666a62;--card:#fff;--bd:#d9dcd3;--ac:#2d6a4f;--acf:#fff;--low:#c2410c;--lowbg:#fff0e6;--okbg:#e8f4ec;color-scheme:light;box-sizing:border-box}
+@media(prefers-color-scheme:dark){:root{--bg:#131412;--fg:#ecede8;--mut:#9a9e94;--card:#1f211e;--bd:#383b36;--ac:#6fcf97;--acf:#10130f;--low:#f59e6b;--lowbg:#33251c;--okbg:#1a2a21;color-scheme:dark}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.4 system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
+header{position:sticky;top:0;background:var(--bg);padding:calc(env(safe-area-inset-top,0px) + 10px) 14px 6px;z-index:5}h1{font-size:20px;margin:0}
+main{max-width:720px;margin:0 auto;padding:6px 12px 96px}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);border-top:1px solid var(--bd);padding-bottom:env(safe-area-inset-bottom,0px);z-index:6}
+nav button{flex:1;border:0;background:none;padding:12px 4px;font:inherit;font-size:14px;color:var(--mut)}nav button.on{color:var(--ac);font-weight:700}
+.m{color:var(--mut);font-size:14px}.w{color:var(--low);font-size:14px}
+.pills{display:flex;gap:8px;overflow-x:auto;padding:4px 0 8px}.pill{flex:none;padding:10px 16px;border-radius:99px;border:1px solid var(--bd);background:var(--card);color:var(--fg);font:inherit}.pill.on{background:var(--ac);color:var(--acf);border-color:var(--ac);font-weight:600}
+.bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 10px}.bar b{flex:1;min-width:120px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:12px;margin:8px 0}.card.low{background:var(--lowbg)}.card.ok{background:var(--okbg)}
+.nm{font-weight:600;margin-bottom:2px}.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{min-width:44px;height:44px;border-radius:12px;border:1px solid var(--bd);background:var(--card);color:var(--fg);font:inherit;font-size:17px}
+.chip.wide{min-width:0;padding:0 14px;font-size:15px}.chip.sel{background:var(--ac);color:var(--acf);border-color:var(--ac);font-weight:700}.chip.sel.low{background:var(--low);border-color:var(--low);color:#fff}
+button,input,textarea{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px 12px}button{cursor:pointer}
+button.pri{background:var(--ac);color:var(--acf);border-color:var(--ac)}input[type=search],input[type=text]{width:100%}textarea{width:100%;min-height:110px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}.row>input{flex:1;min-width:120px}
+.tick{display:flex;gap:12px;align-items:center}.tick input{width:28px;height:28px;flex:none}.done .nm{text-decoration:line-through;opacity:.5}
+</style></head><body>
+<header><h1 id="ttl">Pantry</h1></header><main id="app"></main><nav id="nav"></nav>
+<script>
+const KEY='pantry_v1',D0=()=>({areas:[],groups:{},targets:{},counts:{},checked:{},sug:{},products:{},ts:0});
+let DB=D0(),tab='count',CUR='',EDIT=false,Q='',MSG='';
+try{const x=localStorage.getItem(KEY);if(x)DB=Object.assign(D0(),JSON.parse(x))}catch(e){}
+if(!DB.areas.length)DB.areas=['Fridge','Freezer','Pantry'].map((n,i)=>({id:'a'+(i+1),name:n}));
+const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(DB))}catch(e){}},save=()=>{DB.ts=Date.now();persist();push()};
+const $=(t,a,...k)=>{const e=document.createElement(t);Object.assign(e,a||{});k.flat().forEach(c=>e.append(c));return e};
+const med=a=>{a=[...a].sort((x,y)=>x-y);const m=a.length>>1;return a.length%2?a[m]:(a[m-1]+a[m])/2};
+const tg=(a,g)=>(DB.targets[a]||{})[g]||0,cn=(a,g)=>(DB.counts[a]||{})[g]||null;
+const total=g=>DB.areas.reduce((s,a)=>s+tg(a.id,g),0),haveSum=g=>DB.areas.reduce((s,a)=>{const c=cn(a.id,g);return s+(c?c.n:0)},0);
+const unc=g=>DB.areas.filter(a=>tg(a.id,g)>0&&!cn(a.id,g)),need=g=>Math.max(0,total(g)-haveSum(g));
+const ago=t=>{const d=Math.floor((Date.now()-t)/864e5);return d<1?'today':d===1?'yesterday':d+' days ago'};
+function setT(a,g,n){(DB.targets[a]=DB.targets[a]||{})[g]=n;if(!n)delete DB.targets[a][g];save()}
+function setC(a,g,n){(DB.counts[a]=DB.counts[a]||{})[g]={n,at:Date.now()};save()}
+const cur=()=>DB.areas.find(x=>x.id===CUR)||DB.areas[0];
+const items=a=>Object.keys(DB.groups).filter(g=>tg(a.id,g)>0||(cn(a.id,g)&&cn(a.id,g).n>0)).sort((x,y)=>x.localeCompare(y));
+function suggestFrom(t){const rows=[];let par={};
+ t.split('\n').forEach(l=>{if(l.startsWith('#par ')){try{par=JSON.parse(l.slice(5))}catch(e){}return}if(l[0]==='#')return;const c=l.split('\t');if(c.length>=7&&c[6])rows.push({d:c[1],q:+c[3]||1,t:c[6]})});
+ const ds=[...new Set(rows.map(r=>r.d).filter(Boolean))].sort(),T={};let st=null,pv=null;
+ ds.forEach(d=>{if(pv&&(new Date(d)-new Date(pv))/864e5<=3)T[d]=st;else{st=d;T[d]=d}pv=d});
+ const key=r=>r.d?T[r.d]:'?',all=new Set(rows.map(key)),real=[...all].filter(x=>x!=='?').sort(),
+  gap=real.length>1?(new Date(real[real.length-1])-new Date(real[0]))/864e5/(real.length-1):14,
+  wk=ds.length?Math.max(1,(new Date(ds[ds.length-1])-new Date(ds[0]))/6048e5):1,g={};
+ rows.forEach(r=>{const x=g[r.t]=g[r.t]||{};x[key(r)]=(x[key(r)]||0)+r.q});
+ const out={};Object.entries(g).forEach(([t,tr])=>{const q=Object.values(tr),m=med(q),w=q.reduce((a,x)=>a+Math.min(x,2*m),0)/wk,p=Math.max(1,Math.ceil(w*gap/7-1e-9)),u=par[t]!==undefined&&par[t]!=='';
+  if(q.length>=3||u)out[t]=u?+par[t]:p});return out}
+function doImport(t){t=t.trim();if(!t)return'Nothing to import.';
+ if(t[0]==='{'){try{const j=JSON.parse(t);if(j.areas&&j.groups){DB=Object.assign(D0(),j);save();return'Backup restored.'}}catch(e){return'That backup could not be read.'}}
+ if(t.includes('\t')){const s=suggestFrom(t);let n=0;Object.entries(s).forEach(([g,p])=>{if(!DB.groups[g]){DB.groups[g]={};n++}DB.sug[g]=p});save();
+  return'Imported '+Object.keys(s).length+' items ('+n+' new) with suggested totals. Place them in areas with Count, then Edit items.'}
+ return'Not recognised. Paste the compact export from the previous app, or a backup from this one.'}
+function listRows(){return Object.keys(DB.groups).filter(g=>total(g)>0&&need(g)>0).sort((x,y)=>x.localeCompare(y))}
+let SCANM=false,LOG=[],UNDO=null,SMODE='remove',STOPF=null;
+const note=m=>{LOG.unshift(m);LOG=LOG.slice(0,8)};
+function applyScan(a,p,mode){const g=p.group,c=cn(a.id,g),n=c?c.n:0;if(!DB.groups[g])DB.groups[g]={};
+ if(mode==='remove'&&!c&&!tg(a.id,g)){note('\u2717 '+g+': not in '+a.name);return}
+ if(mode==='remove'&&n===0){note('\u26a0 '+g+' was already 0');return}
+ UNDO={a:a.id,g,prev:c?{...c}:null};const m=mode==='remove'?n-1:n+1;setC(a.id,g,m);note((mode==='remove'?'\u2212 ':'+ ')+g+': '+n+' \u2192 '+m)}
+function undoScan(){if(!UNDO)return;const u=UNDO;if(u.prev)(DB.counts[u.a]=DB.counts[u.a]||{})[u.g]=u.prev;else if(DB.counts[u.a])delete DB.counts[u.a][u.g];save();note('undid last change to '+u.g);UNDO=null}
+async function getProd(code){const p=DB.products[code];if(p)return{p,isNew:false};let o=null;try{o=await off(code)}catch(e){}
+ return{isNew:true,p:o?Object.assign({code,name:[o.brands,o.product_name,o.quantity].filter(Boolean).join(' '),group:'',for:'all',exact:false,src:'Open Food Facts'},flagsFrom(o)):{code,name:'',group:'',for:'all',exact:false,dairy:'unknown',gluten:'unknown',traces:[],src:'manual (not found online)'}}}
+async function streamScan(box,onCode){if(!('BarcodeDetector' in window))throw new Error('This browser cannot scan barcodes.');
+ const vid=$('video',{autoplay:true,playsInline:true,muted:true,style:'width:100%;border-radius:12px'}),stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}}),det=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e']});
+ let on=true,last='',at=0;vid.srcObject=stream;box.replaceChildren(vid);const stop=()=>{on=false;stream.getTracks().forEach(t=>t.stop());box.replaceChildren()};
+ (async()=>{while(on){try{const r=await det.detect(vid);if(r.length&&on){const c=r[0].rawValue,t=Date.now();if(c!==last||t-at>2500){last=c;at=t;await onCode(c,stop)}}}catch(e){}await new Promise(x=>setTimeout(x,250))}})();return stop}
+async function scanPlace(a,box,res,fill){try{const code=await startScan(box);if(!code)return;const{p,isNew}=await getProd(code);
+ const place=pr=>{const g=pr.group;setT(a.id,g,tg(a.id,g)+1);fill();res.replaceChildren($('p',{className:'m',textContent:pr.name+' \u2192 '+g+': wanted here '+tg(a.id,g)+'. Tap the numbers below to change it.'}))};
+ if(isNew)res.replaceChildren($('p',{className:'m',textContent:'New barcode. Link it to an item and it is added to '+a.name+'.'}),pCard(p,true,()=>{res.replaceChildren();if(DB.products[code])place(DB.products[code])}));else place(p)}catch(e){box.textContent=e.message||String(e)}}
+function vScanMode(a){const v=$('div'),box=$('div'),res=$('div'),logd=$('div',{className:'m'}),mb=$('div');
+ const paint=()=>logd.replaceChildren(...LOG.map(l=>$('div',{textContent:l}))),mode=()=>mb.replaceChildren(seg([['remove','Remove (\u22121)'],['add','Add (+1)']],SMODE,x=>{SMODE=x;mode()}));
+ const begin=async()=>{try{if(STOPF)STOPF();STOPF=await streamScan(box,async(code,halt)=>{const{p,isNew}=await getProd(code);
+   if(isNew){halt();STOPF=null;res.replaceChildren($('p',{className:'m',textContent:'New barcode: link it to an item, then scanning continues.'}),pCard(p,true,()=>{res.replaceChildren();if(DB.products[code]){applyScan(a,DB.products[code],SMODE);paint()}begin()}));return}
+   applyScan(a,p,SMODE);paint()})}catch(e){box.textContent=e.message||String(e)}};
+ v.append($('div',{className:'bar'},$('b',{textContent:'Scan mode: '+a.name}),$('button',{className:'pri',textContent:'Done',onclick:()=>{SCANM=false;draw()}})),
+  $('p',{className:'m',textContent:'Each scan changes the count in '+a.name+' by one. Remove mode is for taking items out; Add mode is for putting them away. Items you add that are not staples show as extras.'}),mb,
+  $('div',{className:'row'},$('button',{className:'pri',textContent:'Start scanning',onclick:begin}),$('button',{textContent:'Pause',onclick:()=>{if(STOPF){STOPF();STOPF=null}}}),$('button',{textContent:'Undo last',onclick:()=>{undoScan();paint()}})),box,res,logd);mode();paint();return v}
+function cRow(a,g){const T=tg(a.id,g),c=cn(a.id,g),n=c?c.n:null,st=n==null?'':n<T?'low':'ok',mx=Math.min(12,Math.max(T+2,5));
+ const r=$('div',{className:'card '+st},$('div',{className:'nm',textContent:g}),$('div',{className:'m',textContent:(T?'wanted '+T:'extra (not a staple)')+' \u00b7 '+(c?'counted '+ago(c.at):'not counted yet')}),
+  $('div',{className:'chips'},Array.from({length:mx+1},(_,i)=>$('button',{className:'chip'+(n===i?' sel'+(st==='low'?' low':''):''),textContent:i,onclick:()=>{setC(a.id,g,i);r.replaceWith(cRow(a,g));prog()}})),n>mx?$('button',{className:'chip sel',textContent:n}):''));return r}
+function prog(){const a=cur(),it=items(a),e=document.getElementById('prog');if(e)e.textContent=a.name+': '+it.filter(g=>cn(a.id,g)).length+' of '+it.length+' counted'}
+function eRow(a,g){const t=tg(a.id,g),s=DB.sug[g],r=$('div',{className:'card'},$('div',{className:'nm',textContent:g}),
+  $('div',{className:'m',textContent:'here: '+t+' \u00b7 all areas: '+total(g)+(s?' \u00b7 suggested total '+s:'')}),
+  $('div',{className:'chips'},Array.from({length:11},(_,i)=>$('button',{className:'chip'+(t===i?' sel':''),textContent:i,onclick:()=>{setT(a.id,g,i);r.replaceWith(eRow(a,g))}}))));return r}
+function vCount(){const v=$('div'),a=cur();if(SCANM&&a)return vScanMode(a);
+ v.append($('div',{className:'pills'},DB.areas.map(x=>$('button',{className:'pill'+(x===a?' on':''),textContent:x.name,onclick:()=>{CUR=x.id;EDIT=false;SCANM=false;draw()}}))));
+ if(!a)return v;const its=items(a);
+ if(EDIT){const sbox=$('div'),sres=$('div'),box=$('div'),inp=$('input',{type:'search',placeholder:'Search items\u2026',value:Q,oninput:e=>{Q=e.target.value;fill()}}),nw=$('input',{type:'text',placeholder:'New item name'});
+  const fill=()=>{const q=Q.toLowerCase(),gs=Object.keys(DB.groups).filter(g=>!q||g.toLowerCase().includes(q)).sort((x,y)=>((!total(x)&&DB.sug[x]?0:1)-(!total(y)&&DB.sug[y]?0:1))||x.localeCompare(y));box.replaceChildren(...gs.map(g=>eRow(a,g)))};
+  v.append($('div',{className:'bar'},$('b',{textContent:'Choose what lives in '+a.name}),$('button',{className:'pri',textContent:'Done',onclick:()=>{EDIT=false;Q='';draw()}})),
+   $('p',{className:'m',textContent:'Tap a number for how many you want to keep in this area. Items with a suggested total from your orders come first.'}),inp,
+   $('div',{className:'row'},nw,$('button',{textContent:'Scan a barcode',onclick:()=>scanPlace(a,sbox,sres,fill)}),$('button',{textContent:'Add item',onclick:()=>{const n=nw.value.trim();if(!n)return;if(!DB.groups[n])DB.groups[n]={};setT(a.id,n,1);nw.value='';fill()}})),sbox,sres,box);fill();return v}
+ v.append($('div',{className:'bar'},$('b',{id:'prog'}),$('button',{textContent:'Edit items',onclick:()=>{EDIT=true;draw()}}),$('button',{textContent:'Scan mode',onclick:()=>{SCANM=true;draw()}}),
+  its.length?$('button',{textContent:'All good',onclick:()=>{if(confirm('Mark every item in '+a.name+' as fully stocked?')){its.filter(g=>tg(a.id,g)>0).forEach(g=>setC(a.id,g,tg(a.id,g)));draw()}}}):''));
+ if(!its.length)v.append($('p',{className:'m',textContent:'Nothing here yet. Tap Edit items to choose what lives in '+a.name+'.'}));
+ its.forEach(g=>v.append(cRow(a,g)));setTimeout(prog);return v}
+function vList(){const v=$('div'),rows=listRows(),pending=Object.keys(DB.groups).filter(g=>!total(g)&&DB.sug[g]).length;
+ let nc=0;Object.keys(DB.groups).forEach(g=>{nc+=unc(g).length});
+ v.append($('div',{className:'bar'},$('b',{textContent:rows.length+' item'+(rows.length===1?'':'s')+' to buy'}),
+  $('button',{textContent:'Copy list',onclick:()=>{const t=rows.filter(g=>!DB.checked[g]).map(g=>need(g)+' x '+g).join('\n');try{navigator.clipboard.writeText(t)}catch(e){}}}),
+  $('button',{textContent:'Clear ticks',onclick:()=>{DB.checked={};save();draw()}})));
+ if(nc)v.append($('p',{className:'w',textContent:nc+' item slot'+(nc===1?'':'s')+' not counted yet, so this list may be longer than needed. Count them in the Count tab.'}));
+ if(pending)v.append($('p',{className:'m',textContent:pending+' imported item'+(pending===1?'':'s')+' not placed in any area yet (Count, then Edit items).'}));
+ rows.forEach(g=>{const u=unc(g),ck=!!DB.checked[g];v.append($('div',{className:'card tick'+(ck?' done':'')},$('input',{type:'checkbox',checked:ck,onchange:e=>{DB.checked[g]=e.target.checked;if(!e.target.checked)delete DB.checked[g];save();draw()}}),
+  $('div',{},$('div',{className:'nm',textContent:need(g)+' \u00d7 '+g}),$('div',{className:'m',textContent:'wanted '+total(g)+' \u00b7 have '+haveSum(g)+(u.length?' \u00b7 not counted in '+u.map(x=>x.name).join(', '):'')}),prodLine(g))))});
+ if(!rows.length)v.append($('p',{className:'m',textContent:'Nothing to buy. Place items in areas and count them first.'}));return v}
+function vFind(){const v=$('div'),box=$('div'),inp=$('input',{type:'search',placeholder:'Search: where is it, how many?',value:Q,oninput:e=>{Q=e.target.value;fill()}});
+ const fill=()=>{const q=Q.toLowerCase(),gs=Object.keys(DB.groups).filter(g=>q&&g.toLowerCase().includes(q)).sort();
+  box.replaceChildren(...(q?gs.map(g=>$('div',{className:'card'},$('div',{className:'nm',textContent:g}),
+   $('div',{className:'m',textContent:DB.areas.filter(a=>tg(a.id,g)||cn(a.id,g)).map(a=>{const c=cn(a.id,g);return a.name+': '+(c?c.n:'?')+' of '+tg(a.id,g)+(c?' ('+ago(c.at)+')':'')}).join(' \u00b7 ')||'Not placed in any area'}),
+   $('div',{className:'m',textContent:'Total wanted '+total(g)+', counted '+haveSum(g)}))):[$('p',{className:'m',textContent:'Type a name to search.'})]))};
+ v.append(inp,box);fill();return v}
+function vSetup(){const v=$('div'),ia=$('input',{type:'text',placeholder:'New area, e.g. Garage freezer'}),ta=$('textarea',{placeholder:'Paste the compact export from the previous app, or a backup from this one'}),bk=$('textarea',{readOnly:true,value:JSON.stringify(DB)});
+ v.append($('h3',{textContent:'Areas'}),...DB.areas.map((a,i)=>$('div',{className:'row'},$('input',{type:'text',value:a.name,onchange:e=>{a.name=e.target.value.trim()||a.name;save()}}),
+   $('button',{textContent:'\u2191',onclick:()=>{if(i){DB.areas.splice(i-1,0,DB.areas.splice(i,1)[0]);save();draw()}}}),$('button',{textContent:'\u2193',onclick:()=>{if(i<DB.areas.length-1){DB.areas.splice(i+1,0,DB.areas.splice(i,1)[0]);save();draw()}}}),
+   $('button',{textContent:'Delete',onclick:()=>{if(confirm('Delete '+a.name+' and its counts?')){DB.areas.splice(i,1);delete DB.targets[a.id];delete DB.counts[a.id];save();draw()}}}))),
+  $('div',{className:'row'},ia,$('button',{className:'pri',textContent:'Add area',onclick:()=>{const n=ia.value.trim();if(n){DB.areas.push({id:'a'+Date.now(),name:n});save();draw()}}})),
+  syncUI(),$('h3',{textContent:'Import'}),ta,$('div',{className:'row'},$('button',{className:'pri',textContent:'Import',onclick:()=>{MSG=doImport(ta.value);draw()}}),$('span',{className:'m',textContent:MSG||Object.keys(DB.groups).length+' items stored.'})),
+  $('h3',{textContent:'Backup'}),$('p',{className:'m',textContent:'Everything is stored on this device only. Copy this text somewhere safe, or save it as a file. Paste it in the box above to restore.'}),bk,
+  $('div',{className:'row'},$('button',{textContent:'Copy',onclick:()=>{bk.select();try{navigator.clipboard.writeText(bk.value)}catch(e){}}}),
+   $('button',{textContent:'Save as file',onclick:()=>{const a=$('a',{href:URL.createObjectURL(new Blob([bk.value],{type:'application/json'})),download:'pantry-backup-'+new Date().toISOString().slice(0,10)+'.json'});a.click()}}),
+   $('button',{textContent:'Erase everything',onclick:()=>{if(confirm('Erase all areas, items and counts on this device?')){DB=D0();DB.areas=[{id:'a1',name:'Fridge'}];save();draw()}}})));return v}
+const prods=g=>Object.values(DB.products).filter(p=>p.group===g);
+const prodLine=g=>$('div',{className:'m',textContent:prods(g).length?'Products: '+prods(g).map(p=>(p.exact?'\u2605 ':'')+p.name).join(' \u00b7 '):''});
+const bad=p=>!p.ok&&((p.for!=='kids'&&p.dairy==='yes')||(p.for!=='me'&&p.gluten==='yes')),unk=p=>!p.ok&&((p.for!=='kids'&&p.dairy==='unknown')||(p.for!=='me'&&p.gluten==='unknown'));
+async function off(code){const r=await fetch('https://world.openfoodfacts.org/api/v2/product/'+encodeURIComponent(code)+'.json?fields=product_name,brands,quantity,allergens_tags,ingredients_text,traces_tags'),j=await r.json();return j.status===1?j.product:null}
+function flagsFrom(o){const ing=(o.ingredients_text||'').length>10,t=o.allergens_tags||[];return{dairy:t.includes('en:milk')?'yes':ing?'no':'unknown',gluten:t.includes('en:gluten')?'yes':ing?'no':'unknown',traces:(o.traces_tags||[]).filter(x=>x==='en:milk'||x==='en:gluten').map(x=>x.slice(3))}}
+const seg=(opts,val,pick)=>$('div',{className:'chips'},opts.map(([v,l])=>$('button',{className:'chip wide'+(val===v?' sel':''),textContent:l,onclick:()=>pick(v)})));
+function pCard(p,isNew,done){const r=$('div',{className:'card'}),paint=()=>{
+  const nm=$('input',{type:'text',value:p.name,placeholder:'Product name',onchange:e=>{p.name=e.target.value.trim()}}),gr=$('input',{type:'text',value:p.group,placeholder:'Item it belongs to, e.g. Ham, cooked sliced',onchange:e=>{p.group=e.target.value.trim()}});gr.setAttribute('list','gl');
+  r.replaceChildren($('datalist',{id:'gl'},Object.keys(DB.groups).sort().map(g=>$('option',{value:g}))),$('div',{className:'m',textContent:'Barcode '+p.code+' \u00b7 source: '+(p.src||'manual')}),nm,$('div',{style:'height:8px'}),gr,
+   $('div',{className:'m',textContent:'Who is it for?'}),seg([['all','Everyone'],['kids','Kids (dairy ok)'],['me','Me (gluten ok)']],p.for,v=>{p.for=v;paint()}),
+   $('div',{className:'m',textContent:'Dairy'}),seg([['yes','Has dairy'],['no','No dairy'],['unknown','Unknown']],p.dairy,v=>{p.dairy=v;paint()}),
+   $('div',{className:'m',textContent:'Gluten'}),seg([['yes','Has gluten'],['no','No gluten'],['unknown','Unknown']],p.gluten,v=>{p.gluten=v;paint()}),
+   $('div',{className:'m',textContent:'When shopping'}),seg([[true,'This exact one'],[false,'Any similar is fine']],!!p.exact,v=>{p.exact=v;paint()}),
+   bad(p)?$('p',{className:'w',textContent:'Not suitable for the people this is marked for: it contains dairy or gluten.'}):unk(p)?$('p',{className:'w',textContent:'Dairy or gluten is unknown. Check the ingredients.'}):'',
+   (bad(p)||unk(p)||p.ok)?seg([[true,'I checked it: accept'],[false,'Still needs review']],!!p.ok,v=>{p.ok=v;paint()}):'',
+   (p.traces||[]).length?$('p',{className:'m',textContent:'May contain traces of: '+p.traces.join(', ')}):'',
+   $('div',{className:'row'},$('button',{className:'pri',textContent:'Save',onclick:()=>{p.name=nm.value.trim();p.group=gr.value.trim();if(!p.name||!p.group){alert('Give it a name and an item to belong to.');return}
+     if(!DB.groups[p.group])DB.groups[p.group]={};DB.products[p.code]=p;save();done()}}),$('button',{textContent:'Cancel',onclick:done}),
+    isNew?'':$('button',{textContent:'Delete',onclick:()=>{if(confirm('Delete this product?')){delete DB.products[p.code];save();done()}}})))};paint();return r}
+async function startScan(box){if(!('BarcodeDetector' in window))throw new Error('This browser cannot scan barcodes. Type the number instead.');
+ const vid=$('video',{autoplay:true,playsInline:true,muted:true,style:'width:100%;border-radius:12px'}),stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});vid.srcObject=stream;
+ const det=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e']});let on=true;const stop=()=>{on=false;stream.getTracks().forEach(t=>t.stop());box.replaceChildren()};
+ box.replaceChildren(vid,$('div',{className:'row'},$('button',{textContent:'Cancel',onclick:stop})));
+ return new Promise(res=>{(async()=>{while(on){try{const r=await det.detect(vid);if(r.length){stop();res(r[0].rawValue);return}}catch(e){}await new Promise(x=>setTimeout(x,250))}res(null)})()})}
+function vScan(){const v=$('div'),box=$('div'),res=$('div'),list=$('div'),inp=$('input',{type:'text',inputMode:'numeric',placeholder:'Or type the barcode number'});
+ const fillList=()=>{const q=Q.toLowerCase(),ps=Object.values(DB.products).filter(p=>!q||(p.name+' '+p.group).toLowerCase().includes(q)).sort((a,b)=>a.group.localeCompare(b.group)||a.name.localeCompare(b.name));
+  list.replaceChildren(...ps.map(p=>$('div',{className:'card',onclick:()=>{res.replaceChildren(pCard(p,false,()=>{res.replaceChildren();draw()}));scrollTo(0,0)}},$('div',{className:'nm',textContent:p.name}),
+   $('div',{className:'m',textContent:p.group+(p.exact?' \u00b7 \u2605 exact':'')+' \u00b7 '+(p.ok?'accepted':bad(p)?'\u26a0 not suitable':unk(p)?'check ingredients':'ok')}))),ps.length?'':$('p',{className:'m',textContent:'No products saved yet.'}))};
+ const open=async code=>{code=(code||'').trim();if(!code)return;let p=DB.products[code],isNew=false;
+  if(!p){isNew=true;res.replaceChildren($('p',{className:'m',textContent:'Looking up '+code+'\u2026'}));let o=null;try{o=await off(code)}catch(e){}
+   p=o?Object.assign({code,name:[o.brands,o.product_name,o.quantity].filter(Boolean).join(' '),group:'',for:'all',exact:false,src:'Open Food Facts'},flagsFrom(o)):{code,name:'',group:'',for:'all',exact:false,dairy:'unknown',gluten:'unknown',traces:[],src:'manual (not found online)'}}
+  res.replaceChildren(pCard(p,isNew,()=>{res.replaceChildren();draw()}))};
+ const review=Object.values(DB.products).filter(p=>bad(p)||unk(p)).length;
+ v.append($('div',{className:'bar'},$('b',{textContent:Object.keys(DB.products).length+' products'+(review?' \u00b7 '+review+' to review':'')}),$('button',{className:'pri',textContent:'Scan a barcode',onclick:async()=>{try{const c=await startScan(box);if(c)open(c)}catch(e){box.textContent=e.message||String(e)}}})),
+  box,$('div',{className:'row'},inp,$('button',{textContent:'Look up',onclick:()=>open(inp.value)})),res,
+  $('input',{type:'search',placeholder:'Search saved products\u2026',value:Q,oninput:e=>{Q=e.target.value;fillList()}}),list);fillList();return v}
+const SY=()=>{try{return JSON.parse(localStorage.getItem('pantry_sync')||'{}')}catch(e){return{}}},SYset=o=>{try{localStorage.setItem('pantry_sync',JSON.stringify(Object.assign(SY(),o)))}catch(e){}};
+let FB=null,SYMSG='',PT=null,CONFLICT=false;
+const isEmpty=()=>!Object.keys(DB.groups).length&&!Object.keys(DB.products).length&&!Object.values(DB.targets).some(t=>Object.keys(t).length)&&!Object.values(DB.counts).some(t=>Object.keys(t).length);
+const sm=()=>'Synced '+new Date().toLocaleTimeString()+' \u00b7 '+Object.keys(DB.groups).length+' items, '+DB.areas.length+' areas, '+Object.keys(DB.products).length+' products';
+const parseCfg=t=>{const o={};for(const m of t.matchAll(/(\w+)\s*:\s*["']([^"']*)["']/g))o[m[1]]=m[2];return o};
+async function fbInit(c){if(FB)return FB;const B='https://www.gstatic.com/firebasejs/10.14.1/',[A,Au,Fs]=await Promise.all([import(B+'firebase-app.js'),import(B+'firebase-auth.js'),import(B+'firebase-firestore.js')]);
+ const app=A.initializeApp(c);FB={Au,Fs,auth:Au.getAuth(app),db:Fs.getFirestore(app)};
+ Au.onAuthStateChanged(FB.auth,u=>{if(u)watch(u);else{if(FB.un)FB.un();FB.ref=null}if(tab==='setup')draw()});return FB}
+function decide(d,L){if(!d)return L.empty?'none':'push';if(d.ts===L.ts)return'ignore';if(d.ts===L.base)return L.ts>L.base?'push':'ignore';return(L.ts<=L.base||L.empty)?'pull':'conflict'}
+function applyCloud(d){try{DB=Object.assign(D0(),JSON.parse(d.data));DB.ts=d.ts;DB.base=d.ts;persist();CONFLICT=false;SYMSG=sm();if(!document.activeElement||document.activeElement.tagName!=='INPUT')draw()}catch(e){SYMSG='Sync error: '+e.message}}
+function watch(u){FB.uid=u.uid;FB.ref=FB.Fs.doc(FB.db,'users',u.uid);if(FB.un)FB.un();
+ FB.un=FB.Fs.onSnapshot(FB.ref,s=>{const d=s.exists()?s.data():null;if(d)FB.last=d.ts;const a=decide(d,{ts:DB.ts,base:DB.base||0,empty:isEmpty()});
+  if(a==='push')push(true);else if(a==='pull')applyCloud(d);else if(a==='conflict'){CONFLICT=true;SYMSG='Conflict: this device and the cloud both changed.';draw()}
+  else if(d&&d.ts===DB.ts&&DB.base!==DB.ts){DB.base=DB.ts;persist()}},e=>{SYMSG='Sync error: '+(e.code||e.message)})}
+function push(now,force){if(!FB||!FB.ref||(CONFLICT&&!force))return;clearTimeout(PT);PT=setTimeout(()=>{const my=DB.ts,snap=JSON.stringify(DB);
+  FB.Fs.runTransaction(FB.db,async tx=>{const sn=await tx.get(FB.ref),o=sn.exists()?sn.data():null;if(o&&!force&&o.ts!==(DB.base||0))throw{code:'conflict'};
+   let arch=o?o.arch||0:0;if(o&&(force||o.ts-arch>6e5)){tx.set(FB.Fs.doc(FB.db,'users',FB.uid,'history',String(o.ts)),{data:o.data,ts:o.ts});arch=o.ts}
+   tx.set(FB.ref,{data:snap,ts:my,arch})}).then(()=>{DB.base=my;persist();SYMSG=sm();if(tab==='setup')draw()})
+   .catch(e=>{if(e.code==='conflict'){CONFLICT=true;SYMSG='Conflict: the cloud changed since this device last synced.'}else SYMSG='Sync error: '+(e.code||e.message);draw()})},now?0:800)}
+addEventListener('online',()=>{if(FB&&DB.ts>(DB.base||0))push(true)});
+function banner(){if(!CONFLICT||!FB||!FB.ref)return'';return $('div',{className:'card low'},$('div',{className:'nm',textContent:'Sync conflict: nothing was overwritten'}),
+  $('div',{className:'m',textContent:'This device and the cloud both changed since they last matched. Choose which copy to keep. Keeping this device\u2019s copy saves the cloud copy under Previous versions (Setup).'}),
+  $('div',{className:'row'},$('button',{textContent:'Use the cloud copy',onclick:async()=>{if(!confirm('Replace this device\u2019s data with the cloud copy? This device\u2019s unsynced changes will be lost.'))return;try{const sn=await FB.Fs.getDoc(FB.ref);try{localStorage.setItem('pantry_discarded',JSON.stringify(DB))}catch(e){}applyCloud(sn.data())}catch(e){SYMSG='Sync error: '+(e.code||e.message);draw()}}}),
+   $('button',{className:'pri',textContent:'Keep this device\u2019s copy',onclick:()=>{if(confirm('Replace the cloud copy with this device\u2019s data?')){CONFLICT=false;push(true,true)}}})))}
+function syncUI(){const S=SY(),cfg=$('textarea',{placeholder:'Paste your Firebase config here',value:S.cfg||''}),em=$('input',{type:'text',placeholder:'Email',value:S.email||'',autocapitalize:'none'}),pw=$('input',{type:'password',placeholder:'Password'}),hist=$('div');
+ const go=async create=>{try{const c=parseCfg(cfg.value);if(!c.apiKey||!c.projectId)throw new Error('The config looks incomplete.');SYset({cfg:cfg.value,email:em.value.trim()});const f=await fbInit(c);
+   await(create?f.Au.createUserWithEmailAndPassword:f.Au.signInWithEmailAndPassword)(f.auth,em.value.trim(),pw.value);SYMSG='Signed in.'}catch(e){SYMSG='Sync error: '+(e.code||e.message)}draw()};
+ const loadHist=async()=>{try{if(!FB||!FB.ref)throw new Error('Sign in first.');const F=FB.Fs,sn=await F.getDocs(F.query(F.collection(FB.db,'users',FB.uid,'history'),F.orderBy('ts','desc'),F.limit(20)));
+  hist.replaceChildren(...(sn.empty?[$('p',{className:'m',textContent:'No previous versions saved yet.'})]:sn.docs.map(x=>{const h=x.data();let g=0;try{g=Object.keys(JSON.parse(h.data).groups||{}).length}catch(e){}
+   return $('div',{className:'row'},$('span',{textContent:new Date(h.ts).toLocaleString()+' \u00b7 '+g+' items'}),$('button',{textContent:'Restore',onclick:()=>{if(!confirm('Restore this version? The current cloud version is saved first.'))return;
+    try{DB=Object.assign(D0(),JSON.parse(h.data));DB.ts=Date.now();DB.base=FB.last||0;persist();CONFLICT=false;push(true,true);SYMSG='Restored.';draw()}catch(e){SYMSG='Restore failed: '+e.message;draw()}}}))})))}catch(e){hist.textContent='Could not load: '+(e.code||e.message)}};
+ return $('div',{},$('h3',{textContent:'Sync between devices'}),$('p',{className:'m',textContent:SYMSG||(FB&&FB.auth.currentUser?'Signed in as '+FB.auth.currentUser.email:'Not signed in. Sync is optional; the app works without it.')}),cfg,
+  $('div',{className:'row'},em,pw),$('div',{className:'row'},$('button',{className:'pri',textContent:'Sign in',onclick:()=>go(false)}),$('button',{textContent:'Create account',onclick:()=>go(true)}),
+   $('button',{textContent:'Sign out',onclick:async()=>{if(FB)await FB.Au.signOut(FB.auth);SYMSG='Signed out.';draw()}})),
+  $('div',{className:'row'},$('button',{textContent:'Previous cloud versions',onclick:loadHist})),hist)}
+function draw(){if(STOPF){STOPF();STOPF=null}const tabs=[['count','Count'],['list','List'],['find','Find'],['scan','Scan'],['setup','Setup']];
+ document.getElementById('nav').replaceChildren(...tabs.map(([k,l])=>$('button',{textContent:l,className:tab===k?'on':'',onclick:()=>{tab=k;Q='';EDIT=false;SCANM=false;draw()}})));
+ document.getElementById('ttl').textContent={count:'Count',list:'Shopping list',find:'Find',scan:'Products',setup:'Setup'}[tab];
+ document.getElementById('app').replaceChildren(banner(),({count:vCount,list:vList,find:vFind,scan:vScan,setup:vSetup})[tab]())}
+draw();{const c=SY().cfg;if(c)fbInit(parseCfg(c)).catch(e=>{SYMSG='Sync error: '+(e.code||e.message)})}
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script></body></html>

@@ -351,6 +351,16 @@ let FB = null, SYMSG = '', PT = null, CONFLICT = false;
 const isEmpty = () => !Object.keys(DB.items).length && !Object.keys(DB.barcodes).length;
 const sm = () => 'Synced ' + new Date().toLocaleTimeString() + ' · ' + summary(DB);
 const parseCfg = t => { const o = {}; for (const m of t.matchAll(/(\w+)\s*:\s*["']([^"']*)["']/g)) o[m[1]] = m[2]; return o; };
+// The household's Firebase project, built in so a new device only needs the email and password.
+// This is not a secret (Firebase web keys are public by design): the data is protected by the sign-in and the security rules.
+// A different config pasted in Setup takes precedence.
+const DEFAULT_CFG = `apiKey: "AIzaSyCAaHSSP-LENSJgruva13y0twUJX4ZTKUc",
+authDomain: "groceryapp-b547d.firebaseapp.com",
+projectId: "groceryapp-b547d",
+storageBucket: "groceryapp-b547d.firebasestorage.app",
+messagingSenderId: "1063949070407",
+appId: "1:1063949070407:web:af45f3f4bed55b32ab8162"`;
+const cfgText = () => SY().cfg || DEFAULT_CFG;
 const RULES_HELP = ' Your Firebase rules must allow the sub-folders of your user: match /users/{uid}/{document=**} { allow read, write: if request.auth.uid == uid; }';
 async function fbInit(c) {
   if (FB) return FB; const B = 'https://www.gstatic.com/firebasejs/10.14.1/', [A, Au, Fs] = await Promise.all([import(B + 'firebase-app.js'), import(B + 'firebase-auth.js'), import(B + 'firebase-firestore.js')]);
@@ -381,7 +391,7 @@ function banner() {
       $('button', { className: 'pri', textContent: 'Keep this device’s copy', onclick: () => { if (confirm('Replace the cloud copy with this device’s data?')) { CONFLICT = false; push(true, true); } } })));
 }
 function syncUI() {
-  const S = SY(), cfg = $('textarea', { placeholder: 'Paste your Firebase config here', value: S.cfg || '' }), em = $('input', { type: 'text', placeholder: 'Email', value: S.email || '', autocapitalize: 'none' }), pw = $('input', { type: 'password', placeholder: 'Password' }), hist = $('div');
+  const S = SY(), cfg = $('textarea', { placeholder: 'Paste your Firebase config here', value: cfgText(), style: 'min-height:70px;font-size:12px' }), em = $('input', { type: 'text', placeholder: 'Email', value: S.email || '', autocapitalize: 'none' }), pw = $('input', { type: 'password', placeholder: 'Password' }), hist = $('div');
   const go = async create => { try { const c = parseCfg(cfg.value); if (!c.apiKey || !c.projectId) throw new Error('The config looks incomplete.'); SYset({ cfg: cfg.value, email: em.value.trim() }); const f = await fbInit(c);
       await (create ? f.Au.createUserWithEmailAndPassword : f.Au.signInWithEmailAndPassword)(f.auth, em.value.trim(), pw.value); SYMSG = 'Signed in.'; } catch (e) { SYMSG = 'Sync error: ' + (e.code || e.message); } draw(); };
   const loadHist = async () => { try { if (!FB || !FB.ref) throw new Error('Sign in first.'); const F = FB.Fs, sn = await F.getDocs(F.query(F.collection(FB.db, 'users', FB.uid, 'pantry', 'main', 'history'), F.orderBy('ts', 'desc'), F.limit(20)));
@@ -705,6 +715,6 @@ function draw() {
   document.getElementById('ttl').textContent = { count: 'Count', list: 'Shopping list', compare: 'Compare prices', organize: 'Organize items', find: 'Find', scan: 'Barcodes', setup: 'Setup' }[tab];
   document.getElementById('app').replaceChildren(banner(), ({ count: vCount, list: vList, compare: vCompare, organize: vOrganize, find: vFind, scan: vScan, setup: vSetup })[tab]());
 }
-draw(); { const c = SY().cfg; if (c) fbInit(parseCfg(c)).catch(e => { SYMSG = 'Sync error: ' + (e.code || e.message); }); }
+draw(); fbInit(parseCfg(cfgText())).catch(e => { SYMSG = 'Sync error: ' + (e.code || e.message); });   // reconnects a device already signed in
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script></body></html>
