@@ -1,4 +1,4 @@
-PANTRY – CAPTURE (extension Chrome, version 0.5)
+PANTRY – CAPTURE (extension Chrome, version 0.6)
 ================================================
 
 À quoi ça sert
@@ -107,9 +107,14 @@ Résultat : ensuite, chaque semaine, il suffit de « Tout lire » sur My Items
 (Walmart) et sur ListMaker (Maxi) pour avoir tous les prix à jour.
 
 
-3) Exporter
------------
-Cliquez l'icône Pantry :
+3) Envoyer les prix à l'app
+---------------------------
+Ouvrez l'app (https://gitofrequirement.github.io/ListMaker/) dans le même
+Chrome, onglet Compare : bouton « Import prices from the extension ».
+(Si le bouton n'apparaît pas : extension 0.6 ou plus, puis recharger la
+page de l'app avec F5.)
+
+Exporter un fichier (au besoin) : cliquez l'icône Pantry :
    - « Tout exporter (JSON, pour Claude) » : le fichier à me renvoyer.
    - « Commandes en CSV » / « Prix en CSV » : pour regarder dans Excel.
 

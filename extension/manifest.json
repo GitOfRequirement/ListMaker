@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Pantry – capture des commandes",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "description": "Lit les commandes et les prix affichés sur Walmart.ca et Maxi.ca et les exporte pour l'app Pantry.",
   "permissions": ["storage", "unlimitedStorage"],
   "host_permissions": ["https://www.walmart.ca/*", "https://www.maxi.ca/*"],
@@ -11,6 +11,11 @@
       "matches": ["https://www.walmart.ca/*", "https://www.maxi.ca/*"],
       "exclude_matches": ["https://www.maxi.ca/", "https://www.maxi.ca/?*", "https://www.maxi.ca/en", "https://www.maxi.ca/en?*", "https://www.maxi.ca/en/", "https://www.maxi.ca/en/?*", "https://www.maxi.ca/fr", "https://www.maxi.ca/fr?*", "https://www.maxi.ca/fr/", "https://www.maxi.ca/fr/?*"],
       "js": ["parsers.js", "content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://gitofrequirement.github.io/ListMaker/*"],
+      "js": ["bridge.js"],
       "run_at": "document_idle"
     }
   ],
