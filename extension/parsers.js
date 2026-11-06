@@ -311,7 +311,7 @@
   // "$0.63 / 100ml", "57.0 ¢/100ml", "$1.99/100g", "$1.72/kg", "$0.25/1ea" -> price per kg, L or unit.
   function unitPrice(raw) {
     raw = clean(raw);
-    const m = raw.match(/(\$\s*[\d.,]+|[\d.,]+\s*¢)\s*\/\s*([\d.]*)\s*(kg|g|lb|l|ml|ea|each|un|unit)\b/i);
+    const m = raw.match(/(\$\s*[\d.,]+|[\d.,]+\s*¢)\s*\/\s*([\d.]*)\s*(kg|g|lb|fl\.?\s?oz|oz|l|ml|ea|each|un|unit)\b/i);
     if (!m) return { unitPrice: null, unitBase: '', unitRaw: raw };
     let v = /¢/.test(m[1]) ? parseFloat(m[1].replace(/[^\d.,]/g, '').replace(',', '.')) / 100 : parseFloat(m[1].replace(/[^\d.,]/g, '').replace(',', '.'));
     const n = parseFloat(m[2]) || 1, u = m[3].toLowerCase();
@@ -319,6 +319,8 @@
     if (u === 'g') { v = v / n * 1000; base = 'kg'; }
     else if (u === 'kg') { v = v / n; base = 'kg'; }
     else if (u === 'lb') { v = v / n / 0.45359237; base = 'kg'; }
+    else if (/^fl/.test(u)) { v = v / n / 0.0295735; base = 'L'; }   // fluid ounce
+    else if (u === 'oz') { v = v / n / 0.0283495; base = 'kg'; }      // ounce (weight)
     else if (u === 'ml') { v = v / n * 1000; base = 'L'; }
     else if (u === 'l') { v = v / n; base = 'L'; }
     else { v = v / n; base = 'ea'; }
