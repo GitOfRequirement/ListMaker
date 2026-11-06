@@ -142,8 +142,11 @@
         const title = text(g.querySelector('[data-automation-id="product-title"]'));
         const priceBox = g.querySelector('[data-automation-id="product-price"]');
         if (!a || !title || !priceBox) return;
-        const href = a.getAttribute('href');
-        const urlId = (href.match(/\/ip\/[^/?#]*\/([A-Za-z0-9]+)/) || [])[1] || '';
+        // Sponsored tiles link through an ad tracker (/wapcrs/track?…&rd=<real page>): keep the real page.
+        let href = a.getAttribute('href');
+        try { const rd = new URL(href, 'https://www.walmart.ca').searchParams.get('rd'); if (rd) href = rd; } catch (e) {}
+        if (!/\/ip\//.test(href)) href = '';
+        const urlId = (href.match(/\/ip\/[^/?#]*\/([A-Za-z0-9]+)/) || [])[1] || g.getAttribute('data-item-id') || '';
         // "current price Now $2.46, Was $3.47" or "current price $9.97"
         const sr = [...priceBox.querySelectorAll('span')].map(text).find(s => /current price/i.test(s)) || text(priceBox);
         const now = sr.match(/current price[^$]*\$\s*([\d,]+\.\d{2})/i);
@@ -164,7 +167,7 @@
           bought: bought ? bought[1] : '',
           // Heart button: "Remove from Favourites list…" means the product is already a favourite.
           inLists: (h => h ? (/^Remove from/i.test(h.getAttribute('aria-label') || '') ? ['Favourites'] : []) : null)(g.querySelector('[data-automation-id="heart-item"]')),
-          url: new URL(href, 'https://www.walmart.ca').href.split('?')[0]
+          url: href ? new URL(href, 'https://www.walmart.ca').href.split('?')[0] : ''
         });
       });
       return out;
@@ -278,14 +281,16 @@
         const sku = h.id || '';
         if (!/^\d+_[A-Z]{2}$/.test(sku) || seen.has(sku)) return; seen.add(sku);
         let box = h; for (let i = 0; i < 8 && box && !box.querySelector('[data-testid="price-product-tile"]'); i++) box = box.parentElement;
-        if (!box) return;
+        // The box must hold this product only, otherwise its price or link could belong to a neighbour.
+        if (!box || box.querySelectorAll('[data-testid="product-title"]').length > 1) return;
         // "2 kg, $0.75/100g" — or, for produce sold by weight, "$6.61/1kg $3.00/1lb"
         const pkg = text(box.querySelector('[data-testid="product-package-size"]'));
         const cut = pkg.indexOf('$') < 0 ? pkg.length : pkg.indexOf('$');
         const sale = box.querySelector('[data-testid="sale-price"]');
         const reg = box.querySelector('[data-testid="regular-price"]');
         const was = box.querySelector('[data-testid="was-price"]');
-        const a = box.querySelector('a[href*="/p/"]');
+        // Only a link that leads to THIS product (its code in the address).
+        const a = [h.closest('a[href]'), ...box.querySelectorAll('a[href*="/p/"]')].find(x => x && (x.getAttribute('href') || '').includes('/p/' + sku));
         const badge = text(box.querySelector('[data-testid="product-badge"]'));
         out.push({
           productId: sku, altIds: [],
