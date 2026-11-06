@@ -136,7 +136,7 @@ function areaItems(a) {
 }
 function cRow(a, i) {
   const x = it(i), T = tg(a.id, i), c = cn(a.id, i), n = c ? c.n : null, st = n == null ? '' : n < T ? 'low' : 'ok', mx = Math.min(12, Math.max(T + 2, 5));
-  const what = x.follow === 'deal' ? 'when on sale ' + T : x.follow === 'seasonal' ? 'seasonal' : T ? 'wanted ' + T : 'extra (not wanted here)';
+  const what = x.follow === 'deal' ? 'when on sale ' + T : x.follow === 'seasonal' ? 'seasonal' : x.follow === 'extra' ? 'extra (now and then)' : T ? 'wanted ' + T : 'not wanted here';
   const r = $('div', { className: 'card ' + st }, $('div', { className: 'nm', textContent: x.name }),
     $('div', { className: 'm', textContent: what + ' · ' + (c ? 'counted ' + ago(c.at) : 'not counted yet') }),
     $('div', { className: 'chips' }, Array.from({ length: mx + 1 }, (_, k) => $('button', { className: 'chip' + (n === k ? ' sel' + (st === 'low' ? ' low' : '') : ''), textContent: k,
@@ -170,15 +170,20 @@ function vCount() {
   v.append($('div', { className: 'bar' }, $('b', { id: 'prog' }), $('button', { textContent: 'Edit items', onclick: () => { EDIT = true; draw(); } }),
     its.length ? $('button', { textContent: 'All good', onclick: () => { if (confirm('Mark every item in ' + a.name + ' as fully stocked?')) { its.filter(i => tg(a.id, i) > 0 && it(i).follow === 'normal').forEach(i => setC(a.id, i, tg(a.id, i))); draw(); } } }) : ''));
   if (!its.length) v.append($('p', { className: 'm', textContent: 'Nothing here yet. Tap Edit items to choose what lives in ' + a.name + '.' }));
-  its.forEach(i => v.append(cRow(a, i))); setTimeout(prog); return v;
+  its.forEach(i => v.append(cRow(a, i))); setTimeout(prog);
+  // Keep the chosen area visible in the bar (on a phone the bar scrolls sideways).
+  setTimeout(() => { const on = document.querySelector('.pill.on'); if (on) on.scrollIntoView({ inline: 'center', block: 'nearest' }); });
+  return v;
 }
 
 /* ================================== LIST ================================== */
-function listRows() {
-  const rows = [];
+// compare = true: the rows of the Compare page (extras are shown in their own section there).
+function listRows(compare) {
+  const rows = [], recent = DB.picks && Date.now() - DB.picks.at < 14 * 864e5, skip = new Set(recent ? DB.picks.skipped || [] : []);
   Object.keys(DB.items).forEach(i => {
     const x = it(i);
-    if (x.follow === 'normal' && need(i) > 0) rows.push({ i, q: need(i) + (DB.extra[i] || 0) });
+    if (x.follow === 'normal' && need(i) > 0) rows.push({ i, q: need(i) + (DB.extra[i] || 0), skip: !compare && skip.has(i) });
+    else if (x.follow === 'extra') { const n = Object.values(PL()[i] || {}).reduce((s, k) => s + k, 0); if (n > 0 && !compare) rows.push({ i, q: n, extra: true }); }
     else if (x.follow !== 'retired' && DB.extra[i] > 0) rows.push({ i, q: DB.extra[i], extra: true });
   });
   return rows.sort((r1, r2) => byAisle(r1.i, r2.i));
@@ -191,7 +196,8 @@ function picked(i) {
   return out.length ? out : null;
 }
 function vList() {
-  const v = $('div'), rows = listRows();
+  const all = listRows(), rows = all.filter(r => !r.skip), skippedRows = all.filter(r => r.skip);
+  const v = $('div');
   let nc = 0; Object.keys(DB.items).forEach(i => { if (it(i).follow === 'normal') nc += unc(i).length; });
   // Per store: the products chosen in Compare when there are some, otherwise the usual product at that store.
   const forStore = s => rows.filter(r => !DB.checked[r.i]).flatMap(r => { const pk = picked(r.i);
@@ -213,13 +219,13 @@ function vList() {
     v.append($('div', { className: 'card li' + (ck ? ' done' : '') },
       $('input', { type: 'checkbox', checked: ck, onchange: e => { if (e.target.checked) DB.checked[i] = true; else delete DB.checked[i]; save(); draw(); } }),
       $('div', { className: 'qty', textContent: q }),
-      $('div', { className: 'body' }, $('div', { className: 'nm' }, x.name, extra ? $('span', { className: 'tag', textContent: x.follow === 'seasonal' ? 'seasonal' : 'on sale' }) : '', x.match === 'preferred' ? $('span', { className: 'tag', textContent: 'exactly this' }) : ''),
-        ...(pk ? pk.map(x => $('div', { className: 'prod' }, $('span', { className: 'st ' + x.p.store[0], textContent: x.p.store }), ' ' + x.n + '× ',
-            x.p.url ? $('a', { href: x.p.url, target: '_blank', rel: 'noopener', textContent: pname(x.p) }) : pname(x.p)))
+      $('div', { className: 'body' }, $('div', { className: 'nm' }, x.name, extra ? $('span', { className: 'tag', textContent: { seasonal: 'seasonal', deal: 'on sale', extra: 'extra' }[x.follow] || 'added' }) : '', x.match === 'preferred' ? $('span', { className: 'tag', textContent: 'exactly this' }) : ''),
+        ...(pk ? pk.map(x => $('div', { className: 'prod' }, $('span', { className: 'st ' + x.p.store[0], textContent: x.p.store }), ' ' + x.n + '× ', plink(x.p)))
           : [pw ? $('div', { className: 'prod', textContent: 'Walmart: ' + pname(pw) }) : '', pm ? $('div', { className: 'prod', textContent: 'Maxi: ' + pname(pm) }) : ''])),
       $('button', { className: 'sm', textContent: 'Copy', title: 'Copy the item name', onclick: () => { copy(x.name); draw(); } })));
   });
   if (!rows.length) v.append($('p', { className: 'm', textContent: 'Nothing to buy. Count your areas first.' }));
+  if (skippedRows.length) v.append($('p', { className: 'm', textContent: 'Skipped this week (set to 0 in Compare): ' + skippedRows.map(r => it(r.i).name).join(', ') + '.' }));
   // Seasonal reminders: never added automatically; one tap puts them on the list.
   const seas = Object.keys(DB.items).filter(i => it(i).follow === 'seasonal').sort(byAisle);
   if (seas.length) {
@@ -265,7 +271,7 @@ function applyImport(o) {
     Object.keys(DB.checked).forEach(i => { if (!itemIds.has(i)) delete DB.checked[i]; });
     Object.keys(DB.extra).forEach(i => { if (!itemIds.has(i)) delete DB.extra[i]; });
     if (o.prices) { PRICES = o.prices; savePrices(); }
-    CUR = ''; save(); return 'Imported ' + summary(o) + '.';
+    DB.fixes = {}; applyFixes(); CUR = ''; save(); return 'Imported ' + summary(o) + '.';
   }
   if (o.v === 2 && o.items) {   // a backup made with this app
     if (!confirm('Restore this backup (' + summary(o) + ')? It replaces everything on this device.')) return 'Restore cancelled.';
@@ -424,7 +430,12 @@ function parseSize(s) {
   s = String(s || '').toLowerCase().replace(/(\d),(\d)/g, '$1.$2');
   const nz = (q, u) => u === 'g' ? { q: q / 1000, base: 'kg' } : u === 'kg' ? { q, base: 'kg' } : /^lbs?$/.test(u) ? { q: q * 0.45359, base: 'kg' } : u === 'ml' ? { q: q / 1000, base: 'L' } : { q, base: 'L' };
   let m = s.match(/(\d+)\s*[x×]\s*(\d+(?:\.\d+)?)\s*-?\s*(kg|g|ml|l)\b/); if (m) return nz(+m[1] * +m[2], m[3]);
-  m = s.match(/(\d+(?:\.\d+)?)\s*-?\s*(kg|g|lbs?|ml|l)\b/); if (m) return nz(+m[1], m[2]);
+  m = s.match(/(\d+(?:\.\d+)?)\s*-?\s*(kg|g|lbs?|ml|l)\b/);
+  if (m) {   // "Pack of 6 93ml Bottles", "93 ml, 6 bottles": multiply by the number of units in the pack
+    const pk = s.match(/(?:pack|box|case) of (\d+)/) || s.match(/\b(\d+)\s*-?\s*(?:pack|pk|bottles|cans|cups|pouches|tubes)\b/);
+    const n = pk && +pk[1] !== +m[1] && +pk[1] > 1 && +pk[1] <= 48 ? +pk[1] : 1;
+    return nz(+m[1] * n, m[2]);
+  }
   m = s.match(/(\d+)\s*(count|ct|pack|pk|eggs|bars|rolls|units|pcs|pieces|pouches|packets|tablets|patties)\b/); if (m) return { q: +m[1], base: 'ea' };
   return null;
 }
@@ -438,13 +449,28 @@ function unitOf(x, p) {
 function quote(key) {
   const s = PRICES[key] || [], p = DB.products[key] || CATALOG[key]; if (!s.length || !p) return null;
   const shelf = s.filter(x => x[5] === 'shelf'), src = shelf.length ? shelf : s, last = src[src.length - 1], lu = unitOf(last, p);
-  const since = isoAgo(183), hist = s.filter(x => x[0] >= since).map(x => unitOf(x, p)).filter(v => v && lu && v.b === lu.b).map(v => v.u);
-  const usual = median(hist), off = usual && lu ? 1 - lu.u / usual : null;
-  const age = Math.floor((Date.now() - new Date(last[0] + 'T12:00:00')) / 864e5);
-  return { date: last[0], price: last[1], unit: lu ? lu.u : null, base: lu ? lu.b : '', was: last[4], usual, off, age, stale: age > S().staleDays, src: last[5],
-           onSale: (last[4] && last[4] > last[1]) || (off != null && off >= S().dealGap) };
+  // History in the same unit, ignoring points more than 3× away from today's price (a misread size, not a real price).
+  const since = isoAgo(183), hist = s.filter(x => x[0] >= since).map(x => unitOf(x, p)).filter(v => v && lu && v.b === lu.b && v.u < lu.u * 3 && v.u > lu.u / 3).map(v => v.u);
+  const usual = hist.length >= 3 ? median(hist) : null, off = usual && lu ? 1 - lu.u / usual : null;
+  const age = Math.floor((Date.now() - new Date(last[0] + 'T12:00:00')) / 864e5), stale = age > S().staleDays;
+  // On sale = (a) the store shows a crossed-out "was" price at least 2% higher, or (b) at least X% under the usual price
+  // (needs 3+ prices in 6 months). Never for an old price. saleText always says by how much.
+  const tag = last[5] === 'shelf' && last[4] && last[1] && last[4] > last[1] * 1.02 ? 1 - last[1] / last[4] : null;
+  const byHist = off != null && off >= S().dealGap ? off : null;
+  const onSale = !stale && ((tag != null && tag >= 0.05) || byHist != null);   // badge: at least 5% off
+  const bigSale = onSale && Math.max(tag || 0, byHist || 0) >= S().dealGap;   // "only when on sale" items: at least the deal threshold
+  const saleText = !onSale ? '' : tag != null && tag >= 0.05 ? '−' + Math.round(tag * 100) + '% (was ' + money(last[4]) + ')' : '−' + Math.round(byHist * 100) + '% vs usual ' + money(usual) + '/' + lu.b;
+  return { date: last[0], price: last[1], unit: lu ? lu.u : null, base: lu ? lu.b : '', was: last[4], usual, off, age, stale, src: last[5], onSale, bigSale, saleText };
 }
-const defaultChoice = x => ['Produce', 'Snacks'].includes(x.aisle) ? 'variety' : 'cheapest';
+// A link that really leads to this product (its code in the address); otherwise a search for it on the right site.
+function purl(p) {
+  const ids = [p.id, ...(p.alt || [])].filter(Boolean);
+  if (p.url && ids.some(id => p.url.includes(id))) return p.url;
+  const q = encodeURIComponent(pname(p).split(/\s+/).slice(0, 8).join(' '));
+  return p.store === 'Maxi' ? 'https://www.maxi.ca/en/search?search-bar=' + q : 'https://www.walmart.ca/en/search?q=' + q;
+}
+const plink = p => $('a', { href: purl(p), target: '_blank', rel: 'noopener', textContent: pname(p), title: purl(p) === p.url ? 'Product page' : 'Search for this product on ' + p.store });
+const defaultChoice = x => ['Produce', 'Snacks'].includes(x.aisle) || /yogurt|cereal|juice|granola|cookie|cracker/i.test(x.name) ? 'variety' : 'cheapest';
 const modeOf = x => x.match === 'preferred' ? 'exact' : (x.choice || defaultChoice(x));
 // Candidate products for an item, cheapest first (by unit price in the item's main unit, else by price).
 function candidates(i) {
@@ -455,15 +481,57 @@ function candidates(i) {
   return c.sort((a, b) => (a.cmp == null) - (b.cmp == null) || (a.cmp != null ? a.cmp - b.cmp : a.q.price - b.q.price));
 }
 function C(arr) { const o = {}; arr.forEach(v => { o[v] = (o[v] || 0) + 1; }); return o; }
+// ---- "kind" of a product inside an item (apple variety, yogurt flavour, type of cookie) ----
+// Set by hand in Organize (field "Kind"), otherwise guessed from the words that distinguish the product's name
+// from the other products of the same item (brand, sizes, packaging and words shared by most of them are ignored).
+const VSTOP = new Set(('the and with from for pack bag box tub tray carton bottle bottles pouch pouches family size value club sliced organic natural ' +
+  'naturally imperfect fresh market your great name president presidents choice farmer farmers kid kids snack snacks original classic new large small ' +
+  'mini minis count each per single singles sold bunch dairy free gluten vegan source essential nutrients made canada domestic imported ingredients').split(' '));
+const stem = w => w.length > 4 ? w.replace(/(ies)$/, 'y').replace(/(es|s)$/, '') : w;
+// Known flavours and varieties: when a product name has some, they ARE its kind (brand and mascots don't count).
+const FLAVOURS = ['vanilla', 'strawberry', 'raspberry', 'banana', 'blueberry', 'peach', 'mango', 'chocolate', 'maple', 'cinnamon', 'honey', 'lemon', 'cherry',
+  'caramel', 'coconut', 'hazelnut', 'peanut', 'plain', 'berry', 'apple', 'pear', 'orange', 'lime', 'grape', 'watermelon', 'pineapple', 'pomegranate', 'kiwi',
+  'gala', 'empire', 'granny', 'ambrosia', 'honeycrisp', 'mcintosh', 'macintosh', 'cortland', 'spartan', 'fuji', 'pink lady', 'red delicious', 'golden delicious',
+  'jazz', 'envy', 'kanzi', 'paulared', 'cosmic', 'smitten', 'snowflake', 'rave', 'braeburn', 'juliet', 'akane', 'sunrise', 'ida',
+  'cheddar', 'mozzarella', 'swiss', 'gouda', 'provolone', 'marble', 'teriyaki', 'bbq', 'unsalted', 'garlic', 'dill', 'sea salt', 'sour cream'];
+function flavoursOf(p) {
+  const t = ' ' + words(pname(p)).join(' ') + ' ';
+  const f = FLAVOURS.filter(w => t.includes(' ' + w + ' ') || t.includes(' ' + w + 's ') || (w.endsWith('y') && t.includes(' ' + w.slice(0, -1) + 'ies ')));
+  return f.filter(w => !f.some(o => o !== w && o.includes(w)));   // "red delicious" wins over a shorter word inside it
+}
+function kindsOf(i, cs) {
+  const skip = new Set(words(it(i).name).map(stem));
+  const flav = o => flavoursOf(o.p).filter(w => !skip.has(stem(w)));   // "Apples" item: "apple" is not a kind
+  const raw = new Map(cs.map(o => [o.k, o.p.kind ? new Set(['#' + o.p.kind.toLowerCase().trim()]) : flav(o).length ? new Set(flav(o).map(w => '~' + w))
+    : new Set(words(pname(o.p)).map(stem).filter(w => w.length > 2 && !/^\d/.test(w) && !VSTOP.has(w) && !skip.has(w) && !words(o.p.brand).map(stem).includes(w)))]));
+  // Words present in most of the item's products describe the item, not a kind: drop them.
+  const df = {}; raw.forEach(s => s.forEach(w => { df[w] = (df[w] || 0) + 1; }));
+  const lim = Math.max(2, Math.ceil(raw.size * 0.6));
+  raw.forEach((s, k) => raw.set(k, new Set([...s].filter(w => /^[#~]/.test(w) || df[w] < lim || raw.size < 3))));
+  return raw;
+}
+function sameKind(a, b) {
+  if (!a || !b) return false;
+  // Kinds set by hand (#) or known flavours (~) must match exactly; a tagged product never matches an untagged one.
+  const tagged = x => [...x].some(w => /^[#~]/.test(w));
+  if (tagged(a) && tagged(b)) return [...a].sort().join() === [...b].sort().join();
+  if (tagged(a) || tagged(b)) return false;
+  if (!a.size || !b.size) return !a.size && !b.size;
+  const inter = [...a].filter(w => b.has(w)).length;
+  return inter / Math.min(a.size, b.size) >= 0.5;
+}
 // The app's proposal for an item: {productKey: qty}
 function propose(i, qty) {
   const cs = candidates(i); if (!cs.length) return {};
-  if (modeOf(it(i)) !== 'variety') return { [cs[0].k]: qty };
-  // Variety: cheapest first, options up to X% above the best (or on sale), recent prices only when possible;
-  // the product bought most recently goes last, so the choice rotates from one week to the next.
+  // Cheapest / exactly: the cheapest product with a recent price (an old price only when nothing recent).
+  if (modeOf(it(i)) !== 'variety') { const f = cs.find(o => !o.q.stale) || cs[0]; return { [f.k]: qty }; }
+  // Variety: the cheapest product of each KIND (Gala, Empire…; vanilla, strawberry…), up to 4 kinds, each within X%
+  // of the best price (or on sale); recent prices when possible; the kind bought most recently goes last (rotation).
   const fresh = cs.filter(o => !o.q.stale), base = fresh.length ? fresh : cs;
   const val = o => o.cmp != null ? o.cmp : o.q.price, best = val(base[0]), gap = S().varietyGap;
-  const pool = base.filter(o => o.q.onSale || val(o) <= best * (1 + gap)).slice(0, 4);
+  const kinds = kindsOf(i, base), pool = [];
+  const pick = lim => base.forEach(o => { if (pool.length < 4 && !pool.includes(o) && (o.q.onSale || val(o) <= best * (1 + lim)) && !pool.some(g => sameKind(kinds.get(o.k), kinds.get(g.k)))) pool.push(o); });
+  pick(gap); if (pool.length < Math.min(qty, 2)) pick(gap * 2);   // 2+ wanted but one kind fits: allow a bit more for a second kind
   if (pool.length > 1 && qty < pool.length) {
     const recent = pool.reduce((m, o) => (o.p.last || '') > (m.p.last || '') ? o : m, pool[0]);
     pool.splice(pool.indexOf(recent), 1); pool.push(recent);
@@ -484,7 +552,8 @@ function importExtension(o) {
     const ids = [sp.productId, ...(sp.altIds || [])]; let k = ids.map(id => idx[sp.store[0] + ':' + id]).find(Boolean);
     if (!k) { k = sp.store[0] + ':' + sp.productId; CATALOG[k] = { store: sp.store, id: sp.productId, alt: sp.altIds || [], name: sp.name, brand: sp.brand || '', url: sp.url || '', size: sp.size || '', item: null }; add(k, CATALOG[k]); cat++; }
     const p = DB.products[k] || CATALOG[k]; if (DB.products[k]) upd++;
-    if (!p.url && sp.url) p.url = sp.url; if (!p.size && sp.size) p.size = sp.size;
+    if (sp.url && ids.some(id => sp.url.includes(id))) p.url = sp.url;   // only a link that contains this product's code
+    if (!p.size && sp.size) p.size = sp.size;
     (sp.obs || []).forEach(ob => point(k, [ob.d, ob.price, ob.unitPrice, ob.unitBase || '', ob.wasPrice, 'shelf']));
   });
   (o.orders || []).forEach(od => (od.lines || []).forEach(l => {
@@ -519,7 +588,7 @@ function importFromExtension() {
 }
 
 function vCompare() {
-  const v = $('div'), rows = listRows(), st = S();
+  const v = $('div'), rows = listRows(true), st = S();
   const file = $('input', { type: 'file', accept: '.json,application/json', onchange: async e => { const f = e.target.files[0]; if (!f) return; try { MSG = importExtension(JSON.parse(await f.text())); } catch (er) { MSG = 'That file could not be read: ' + er.message; } draw(); } });
   const newest = Object.values(PRICES).reduce((m, s) => s.length && s[s.length - 1][0] > m ? s[s.length - 1][0] : m, '');
   v.append($('div', { className: 'card' },
@@ -532,54 +601,87 @@ function vCompare() {
     MSG ? $('p', { className: 'm', textContent: MSG }) : ''));
   MSG = '';
   if (!rows.length) v.append($('p', { className: 'm', textContent: 'Nothing on the shopping list. Count your areas first (or add seasonal items from the List tab).' }));
-  const basket = { Walmart: [], Maxi: [] }, picks = {};
-  let lastA = null;
-  rows.forEach(({ i, q }) => {
+  const basket = { Walmart: [], Maxi: [] }, picks = {}, skipped = [];
+
+  // One card per item. q = quantity wanted (0 for extras: you add what you want with +).
+  const itemCard = (i, q, extra) => {
     const x = it(i), mode = modeOf(x), cs = candidates(i), plan = planOf(i, q), manual = i in PL();
     const chosen = Object.values(plan).reduce((s, n) => s + n, 0);
     if (chosen) picks[i] = plan;
-    if (x.aisle !== lastA) { lastA = x.aisle; v.append($('div', { className: 'aisle', textContent: x.aisle || 'Other' })); }
     const setPlan = (k, n) => { const p = Object.assign({}, planOf(i, q)); if (n > 0) p[k] = n; else delete p[k]; PL()[i] = p; save(); draw(); };
+    // Everything set to 0 by hand = not this week: a short line with a way back.
+    if (!extra && manual && !chosen) {
+      skipped.push(i);
+      return $('div', { className: 'card bar', style: 'opacity:.7' }, $('div', { className: 'qty', textContent: '–' }), $('b', { textContent: x.name }),
+        $('span', { className: 'm', textContent: 'skipped this week (' + q + ' wanted)' }), $('button', { className: 'sm', textContent: 'Restore', onclick: () => { delete PL()[i]; save(); draw(); } }));
+    }
     const card = $('div', { className: 'card' },
-      $('div', { className: 'ihead' }, $('div', { className: 'qty', textContent: q }), $('div', { className: 'nm', textContent: x.name }),
-        $('select', { onchange: e => { const m = e.target.value; if (m === 'exact') x.match = 'preferred'; else { x.match = 'any'; x.choice = m; } delete PL()[i]; saveLocal(); save(); draw(); } },
+      $('div', { className: 'ihead' }, $('div', { className: 'qty', textContent: extra ? (chosen || '') : q }), $('div', { className: 'nm', textContent: x.name }),
+        $('select', { onchange: e => { const m = e.target.value; if (m === 'exact') x.match = 'preferred'; else { x.match = 'any'; x.choice = m; } delete PL()[i]; save(); draw(); } },
           ...[['cheapest', 'Cheapest'], ['variety', 'Variety'], ['exact', 'Exactly this one']].map(([val, l]) => $('option', { value: val, textContent: l, selected: mode === val }))),
-        manual ? $('button', { className: 'sm', textContent: 'Back to proposal', onclick: () => { delete PL()[i]; save(); draw(); } }) : '',
-        chosen !== q ? $('span', { className: 'w', textContent: chosen + ' of ' + q + ' chosen' }) : ''));
-    if (!cs.length) card.append($('p', { className: 'w', textContent: mode === 'exact' ? 'No preferred product with a price. Mark one with ★ (Find tab) or switch the mode.' : 'No price for this item yet: read the stores’ pages with the extension, then import.' }));
-    const show = cs.slice(0, Math.max(5, Object.keys(plan).length));
+        !extra && manual ? $('button', { className: 'sm', textContent: 'Back to proposal', onclick: () => { delete PL()[i]; save(); draw(); } }) : '',
+        extra && chosen ? $('button', { className: 'sm', textContent: 'None this week', onclick: () => { delete PL()[i]; save(); draw(); } }) : '',
+        !extra && chosen !== q ? $('span', { className: 'w', textContent: chosen + ' of ' + q + ' chosen' }) : ''));
+    if (!cs.length) card.append($('p', { className: 'w', textContent: mode === 'exact' ? 'No preferred product with a price. Mark one with ★ or switch the mode.' : 'No price for this item yet: read the stores’ pages with the extension, then import.' }));
+    // Variety: the cheapest of each kind first, then the others.
+    let order = cs;
+    if (mode === 'variety' && cs.length > 1) {
+      const kinds = kindsOf(i, cs), heads = [];
+      cs.forEach(o => { if (!heads.some(g => sameKind(kinds.get(o.k), kinds.get(g.k)))) heads.push(o); });
+      order = heads.concat(cs.filter(o => !heads.includes(o)));
+    }
+    const show = order.filter((o, n) => n < 5 || plan[o.k]);
     show.forEach(o => {
       const n = plan[o.k] || 0, qt = o.q;
       if (n) basket[o.p.store].push({ i, k: o.k, p: o.p, n, q: qt });
       card.append($('div', { className: 'opt' + (n ? '' : ' off') },
         $('span', { className: 'st ' + o.p.store[0], textContent: o.p.store }),
-        $('div', { className: 'pn' }, o.p.status === 'preferred' ? '★ ' : '', o.p.url ? $('a', { href: o.p.url, target: '_blank', rel: 'noopener', textContent: pname(o.p) }) : pname(o.p),
+        $('div', { className: 'pn' }, o.p.status === 'preferred' ? '★ ' : '', plink(o.p),
           o.p.size ? $('span', { className: 'old', textContent: ' · ' + o.p.size }) : '',
-          qt.onSale ? $('span', { className: 'deal', textContent: ' on sale' + (qt.off ? ' −' + Math.round(qt.off * 100) + '%' : '') }) : '',
+          qt.onSale ? $('span', { className: 'deal', textContent: ' on sale ' + qt.saleText }) : '',
           $('div', { className: 'old', textContent: (qt.src === 'order' ? 'paid ' : 'seen ') + qt.date + (qt.stale ? ' (old price)' : '') + (qt.usual ? ' · usual ' + money(qt.usual) + '/' + qt.base : '') }),
           $('span', { className: 'mini' }, $('button', { textContent: o.p.status === 'preferred' ? '★ preferred' : '☆', title: 'Preferred product', onclick: () => { o.p.status = o.p.status === 'preferred' ? 'ok' : 'preferred'; save(); draw(); } }),
-            $('button', { textContent: 'Never this one', onclick: () => { if (confirm('Exclude "' + pname(o.p) + '" from future comparisons?')) { o.p.status = 'excluded'; if (PL()[i]) delete PL()[i][o.k]; saveLocal(); save(); draw(); } } }))),
+            $('button', { textContent: 'Never this one', onclick: () => { if (confirm('Exclude "' + pname(o.p) + '" from future comparisons?')) { o.p.status = 'excluded'; if (PL()[i]) delete PL()[i][o.k]; save(); draw(); } } }))),
         $('div', { className: 'num', textContent: money(qt.price) }),
         $('div', { className: 'num u', textContent: fmtU(qt) }),
         $('div', { className: 'step' }, $('button', { textContent: '−', onclick: () => setPlan(o.k, n - 1) }), $('b', { textContent: n }), $('button', { textContent: '+', onclick: () => setPlan(o.k, n + 1) }))));
     });
-    if (cs.length > show.length) card.append($('div', { className: 'm', textContent: (cs.length - show.length) + ' more option(s), more expensive.' }));
-    v.append(card);
+    if (order.length > show.length) card.append($('div', { className: 'm', textContent: (order.length - show.length) + ' more option(s), more expensive.' }));
+    return card;
+  };
+
+  let lastA = null;
+  rows.forEach(({ i, q }) => {
+    const x = it(i);
+    if (x.aisle !== lastA) { lastA = x.aisle; v.append($('div', { className: 'aisle', textContent: x.aisle || 'Other' })); }
+    v.append(itemCard(i, q, false));
   });
 
-  // Share the final choices with the other devices (only when they changed, to avoid useless syncs).
-  if (JSON.stringify(picks) !== JSON.stringify((DB.picks || {}).items || {})) { DB.picks = { at: Date.now(), items: picks }; save(); }
-
   // Items followed "only when on sale" that are significantly under their usual price now.
-  const deals = Object.keys(DB.items).filter(i => it(i).follow === 'deal').map(i => ({ i, c: candidates(i).find(o => o.q.onSale && !o.q.stale) })).filter(d => d.c);
+  const deals = Object.keys(DB.items).filter(i => it(i).follow === 'deal').map(i => ({ i, c: candidates(i).find(o => o.q.bigSale) })).filter(d => d.c);
   if (deals.length) {
     v.append($('h3', { textContent: 'On sale this week (items you buy only on sale)' }));
     deals.forEach(({ i, c }) => { const want = Math.max(1, total(i) - have(i)), on = DB.extra[i] > 0;
       v.append($('div', { className: 'card bar' }, $('b', { textContent: it(i).name }), $('span', { className: 'st ' + c.p.store[0], textContent: c.p.store }),
-        $('span', { textContent: pname(c.p) + ' — ' + money(c.q.price) + ' ' }), $('span', { className: 'deal', textContent: c.q.off ? '−' + Math.round(c.q.off * 100) + '% vs usual' : 'on sale' }),
+        $('span', {}, plink(c.p), ' — ' + money(c.q.price) + ' '), $('span', { className: 'deal', textContent: c.q.saleText }),
         $('button', { className: on ? 'sm' : 'sm pri', textContent: on ? 'Remove' : 'Add ' + want, onclick: () => { if (on) delete DB.extra[i]; else DB.extra[i] = want; save(); draw(); } }))); });
   }
 
+  // Extras: things you want now and then. Never added on their own: compare, and add with + what you feel like this week.
+  const extras = Object.keys(DB.items).filter(i => it(i).follow === 'extra').sort(byAisle);
+  if (extras.length) {
+    v.append($('div', { style: 'border-top:3px solid var(--ac);margin:26px 0 4px' }),
+      $('h3', { textContent: 'Extras — only if you feel like it this week' }),
+      $('p', { className: 'm', textContent: 'Not on the list by default. Add with + the ones you want; they go into the baskets below.' }));
+    extras.forEach(i => v.append(itemCard(i, 0, true)));
+  }
+
+  // Share the final choices with the other devices (only when they changed, to avoid useless syncs).
+  if (JSON.stringify(picks) !== JSON.stringify((DB.picks || {}).items || {}) || JSON.stringify(skipped) !== JSON.stringify((DB.picks || {}).skipped || [])) {
+    DB.picks = { at: Date.now(), items: picks, skipped }; save();
+  }
+
+  v.append($('div', { style: 'border-top:3px solid var(--ac);margin:26px 0 4px' }));
   // The two baskets.
   v.append($('h3', { textContent: 'Baskets' }));
   const bx = $('div', { className: 'basket' });
@@ -601,13 +703,13 @@ function vCompare() {
    its products, and the products set aside by the extension (CATALOG) that can be linked to it.
    ======================================================================================== */
 let OSEL = '', OQ = '', OF = { aisle: '', follow: '', issues: false }, OPQ = null;
-const FOLLOWS = [['normal', 'Normal'], ['seasonal', 'Seasonal'], ['deal', 'Only on sale'], ['retired', 'Retired']];
+const FOLLOWS = [['normal', 'Normal'], ['extra', 'Extra (now and then)'], ['seasonal', 'Seasonal'], ['deal', 'Only on sale'], ['retired', 'Retired']];
 const MODES = [['cheapest', 'Cheapest'], ['variety', 'Variety'], ['exact', 'Exactly this one']];
 function issues(i) {
   const x = it(i), ps = prodsOf(i), out = [];
   if (!ps.length) out.push('no product');
   else if (!ps.some(([k, p]) => p.status !== 'excluded' && quote(k))) out.push('no price');
-  if (x.follow !== 'retired' && !total(i) && x.follow !== 'seasonal') out.push('no quantity');
+  if (['normal', 'deal'].includes(x.follow) && !total(i)) out.push('no quantity');
   if (modeOf(x) === 'exact' && !ps.some(([, p]) => p.status === 'preferred')) out.push('no preferred product');
   return out;
 }
@@ -617,12 +719,13 @@ function prodLine(k, p, i) {
   const q = quote(k), r = $('div', { className: 'prow' + (p.status === 'excluded' ? ' off' : '') });
   const mv = $('input', { type: 'text', placeholder: 'Move to item…', style: 'width:150px' }); mv.setAttribute('list', 'orgitems');
   r.append($('span', { className: 'st ' + p.store[0], textContent: p.store }),
-    $('div', { className: 'pn' }, p.url ? $('a', { href: p.url, target: '_blank', rel: 'noopener', textContent: pname(p) }) : pname(p), p.size ? $('span', { className: 'old', textContent: ' · ' + p.size }) : '',
+    $('div', { className: 'pn' }, plink(p), p.size ? $('span', { className: 'old', textContent: ' · ' + p.size }) : '',
       $('div', { className: 'old', textContent: (p.n ? 'bought ' + p.n + '×, last ' + (p.last || '?') : 'never bought') + (q && q.onSale ? ' · on sale' : '') })),
     $('div', { className: 'num', textContent: q ? money(q.price) : '—' }),
     $('div', { className: 'num u', textContent: q ? fmtU(q) + (q.stale ? ' (old)' : '') : '' }),
     $('div', { className: 'acts row', style: 'margin:0' },
       $('select', { onchange: e => { p.status = e.target.value; save(); draw(); } }, ...[['preferred', '★ Preferred'], ['ok', 'OK'], ['new', 'New'], ['excluded', '✕ Never']].map(([v, l]) => $('option', { value: v, textContent: l, selected: p.status === v }))),
+      $('input', { type: 'text', value: p.kind || '', placeholder: 'Kind (e.g. Gala)', title: 'Variety / flavour / type: in Variety mode, the app proposes the cheapest of each kind', style: 'width:120px', onchange: e => { const k = e.target.value.trim(); if (k) p.kind = k; else delete p.kind; save(); draw(); } }),
       mv, $('button', { className: 'sm', textContent: 'Move', onclick: () => { const id = itemByName(mv.value); if (!id) { alert('Choose an existing item from the list.'); return; } p.item = id; save(); draw(); } }),
       $('button', { className: 'sm', textContent: 'Unlink', title: 'Put this product aside (it stays in the catalog)', onclick: () => { CATALOG[k] = Object.assign({}, p, { item: null }); delete DB.products[k]; Object.values(PL()).forEach(pl => delete pl[k]); saveLocal(); save(); draw(); } })));
   return r;
@@ -691,7 +794,7 @@ function vOrganize() {
       res.replaceChildren($('p', { className: 'm', textContent: hits.length ? hits.length + (hits.length === 40 ? '+' : '') + ' product(s) found (all words first, then cheapest per unit).' : 'Nothing found. Try fewer or other words (in English, like the stores’ sites).' }),
         ...hits.map(({ k, p, q }) => $('div', { className: 'prow' },
           $('span', { className: 'st ' + p.store[0], textContent: p.store }),
-          $('div', { className: 'pn' }, p.url ? $('a', { href: p.url, target: '_blank', rel: 'noopener', textContent: pname(p) }) : pname(p), p.size ? $('span', { className: 'old', textContent: ' · ' + p.size }) : '',
+          $('div', { className: 'pn' }, plink(p), p.size ? $('span', { className: 'old', textContent: ' · ' + p.size }) : '',
             q ? $('div', { className: 'old', textContent: 'seen ' + q.date + (q.onSale ? ' · on sale' : '') }) : ''),
           $('div', { className: 'num', textContent: q ? money(q.price) : '—' }),
           $('div', { className: 'num u', textContent: q ? fmtU(q) : '' }),
@@ -715,6 +818,20 @@ function draw() {
   document.getElementById('ttl').textContent = { count: 'Count', list: 'Shopping list', compare: 'Compare prices', organize: 'Organize items', find: 'Find', scan: 'Barcodes', setup: 'Setup' }[tab];
   document.getElementById('app').replaceChildren(banner(), ({ count: vCount, list: vList, compare: vCompare, organize: vOrganize, find: vFind, scan: vScan, setup: vSetup })[tab]());
 }
+// ---- one-time corrections to the data (synced: each one runs once, on the first device that loads it) ----
+const FIXES = {
+  // Bear Paws are no longer wanted among the cookies.
+  'bear-paws-out': () => Object.values(DB.products).forEach(p => { if (p.item === 'cookies' && /bear paws/i.test(pname(p))) p.status = 'excluded'; }),
+  // "PC Blueberries Cultivated" (2 kg bag) is frozen, not fresh berries.
+  'pc-blueberries-frozen': () => Object.values(DB.products).forEach(p => { if (p.item === 'berries' && /blueberries cultivated/i.test(p.name) && DB.items['fruit-frozen-blueberries']) p.item = 'fruit-frozen-blueberries'; }),
+};
+function applyFixes() {
+  if (!Object.keys(DB.items).length) return false;
+  DB.fixes = DB.fixes || {}; let changed = false;
+  Object.entries(FIXES).forEach(([k, f]) => { if (!DB.fixes[k]) { f(); DB.fixes[k] = 1; changed = true; } });
+  return changed;
+}
+if (applyFixes()) save();
 draw(); fbInit(parseCfg(cfgText())).catch(e => { SYMSG = 'Sync error: ' + (e.code || e.message); });   // reconnects a device already signed in
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script></body></html>

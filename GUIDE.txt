@@ -33,8 +33,13 @@ CHAQUE SEMAINE
      Variety    2 à 4 options proches du meilleur prix, en alternance
      Exactly    seulement le produit marqué ★ (ex. le bouillon Imagine)
    Ajuster au besoin avec − / +. « Back to proposal » annule.
+   Tout mettre à 0 = « skipped this week » (bouton « Restore » pour revenir).
    ☆ = produit préféré · « Never this one » = ne plus jamais le proposer.
+   Variety propose la moins chère de chaque SORTE (Gala, Empire… ; vanille,
+   fraise…). Si une sorte est mal reconnue : Organize > le produit > « Kind ».
    Section « On sale this week » : articles achetés seulement en rabais.
+   Section « Extras » : les envies de temps en temps (suivi « Extra ») ;
+   jamais ajoutés d'office, on fait + sur ce qu'on veut cette semaine.
 
 4. COMMANDER (ordinateur ou téléphone)
    En bas de Compare, un panier Walmart et un panier Maxi :
