@@ -37,7 +37,10 @@ CHAQUE SEMAINE
    ☆ = produit préféré · « Never this one » = ne plus jamais le proposer.
    Variety propose la moins chère de chaque SORTE (Gala, Empire… ; vanille,
    fraise…). Si une sorte est mal reconnue : Organize > le produit > « Kind ».
-   Section « On sale this week » : articles achetés seulement en rabais.
+   Section « On sale now — stock up? » : vos articles de base et « seulement
+   en rabais » à au moins 20 % de rabais, même si vous en avez encore.
+   « Add » en ajoute en surplus ; « Not for this item » le retire de cette
+   section (à remettre dans Organize > Deal alerts).
    Section « Extras » : les envies de temps en temps (suivi « Extra ») ;
    jamais ajoutés d'office, on fait + sur ce qu'on veut cette semaine.
 
@@ -57,6 +60,9 @@ DE TEMPS EN TEMPS
   mode), gérer ses produits, et rattacher des produits vus par l'extension
   (zone « Add products seen by the extension »). Cocher « to fix only »
   montre ce qui manque (pas de produit, pas de prix…).
+  « Rules for this item » : des mots (« pork » + « roast, loin… », sauf
+  « chops ») qui rattachent automatiquement les nouveaux produits vus par
+  l'extension. « Merge » : fusionner deux articles en un seul.
 - Nouveaux produits achetés souvent : extension > icône Pantry >
   « Compléter les listes » (voir extension\LISEZMOI.txt).
 - Endroits de la maison : onglet Setup > Areas.

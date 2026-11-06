@@ -154,7 +154,7 @@ function eRow(a, i) {
 function vCount() {
   const v = $('div'), a = cur();
   if (!Object.keys(DB.items).length) { v.append($('div', { className: 'card' }, $('div', { className: 'nm', textContent: 'No items yet' }), $('p', { className: 'm', textContent: 'Go to Setup and import your data file (pantry-data-v2.json).' }), $('button', { className: 'pri', textContent: 'Open Setup', onclick: () => { tab = 'setup'; draw(); } }))); return v; }
-  v.append($('div', { className: 'pills' }, DB.areas.map(x => $('button', { className: 'pill' + (x === a ? ' on' : ''), textContent: x.name, onclick: () => { CUR = x.id; EDIT = false; draw(); } }))));
+  v.append($('div', { className: 'pills' }, DB.areas.map(x => $('button', { className: 'pill' + (x === a ? ' on' : ''), textContent: x.name, onclick: () => { CUR = x.id; EDIT = false; draw.last = null; draw(); } }))));   // a new area starts at the top
   if (!a) return v;
   if (EDIT) {
     const box = $('div'), inp = $('input', { type: 'search', placeholder: 'Search items…', value: Q, oninput: e => { Q = e.target.value; fill(); } }), nw = $('input', { type: 'text', placeholder: 'New item name (e.g. Apples)' });
@@ -428,9 +428,11 @@ const median = a => { if (!a.length) return null; const s = [...a].sort((x, y) =
 // "454 g", "1.89 L", "4 x 235-ml", "12X355ML", "3 lb bag", "30 Eggs", "12 Pack" -> {q, base} with base kg | L | ea
 function parseSize(s) {
   s = String(s || '').toLowerCase().replace(/(\d),(\d)/g, '$1.$2');
-  const nz = (q, u) => u === 'g' ? { q: q / 1000, base: 'kg' } : u === 'kg' ? { q, base: 'kg' } : /^lbs?$/.test(u) ? { q: q * 0.45359, base: 'kg' } : u === 'ml' ? { q: q / 1000, base: 'L' } : { q, base: 'L' };
-  let m = s.match(/(\d+)\s*[x×]\s*(\d+(?:\.\d+)?)\s*-?\s*(kg|g|ml|l)\b/); if (m) return nz(+m[1] * +m[2], m[3]);
-  m = s.match(/(\d+(?:\.\d+)?)\s*-?\s*(kg|g|lbs?|ml|l)\b/);
+  // oz = weight ounce (28.35 g), fl oz = fluid ounce (29.57 ml)
+  const nz = (q, u) => u === 'g' ? { q: q / 1000, base: 'kg' } : u === 'kg' ? { q, base: 'kg' } : /^lbs?$/.test(u) ? { q: q * 0.45359, base: 'kg' }
+    : /^fl/.test(u) ? { q: q * 0.0295735, base: 'L' } : u === 'oz' ? { q: q * 0.0283495, base: 'kg' } : u === 'ml' ? { q: q / 1000, base: 'L' } : { q, base: 'L' };
+  let m = s.match(/(\d+)\s*[x×]\s*(\d+(?:\.\d+)?)\s*-?\s*(kg|g|ml|fl\.?\s?oz|oz|l)\b/); if (m) return nz(+m[1] * +m[2], m[3]);
+  m = s.match(/(\d+(?:\.\d+)?)\s*-?\s*(kg|g|lbs?|ml|fl\.?\s?oz|oz|l)\b/);
   if (m) {   // "Pack of 6 93ml Bottles", "93 ml, 6 bottles": multiply by the number of units in the pack
     const pk = s.match(/(?:pack|box|case) of (\d+)/) || s.match(/\b(\d+)\s*-?\s*(?:pack|pk|bottles|cans|cups|pouches|tubes)\b/);
     const n = pk && +pk[1] !== +m[1] && +pk[1] > 1 && +pk[1] <= 48 ? +pk[1] : 1;
@@ -563,8 +565,9 @@ function importExtension(o) {
     const q = l.weightKg ? 1 : (l.qty || 1);
     if (l.paid != null) point(k, l.weightKg ? [od.orderDate, l.paid, l.pricePerKg || +(l.paid / l.weightKg).toFixed(3), 'kg', l.wasPrice, 'order'] : [od.orderDate, +(l.paid / q).toFixed(2), null, '', l.wasPrice, 'order']);
   }));
+  const rr = applyRules();   // your item rules add the new matching products right away
   savePrices(); saveLocal(); save();
-  return pts + ' new price points · ' + upd + ' known products updated · ' + cat + ' new products put aside (not linked to an item yet).';
+  return pts + ' new price points · ' + upd + ' known products updated · ' + cat + ' new products put aside' + (rr.linked ? ', of which ' + rr.linked + ' added to items by your rules' : '') + '.';
 }
 
 // ---- direct link with the Chrome extension (its bridge.js runs on this app's address) ----
@@ -657,14 +660,23 @@ function vCompare() {
     v.append(itemCard(i, q, false));
   });
 
-  // Items followed "only when on sale" that are significantly under their usual price now.
-  const deals = Object.keys(DB.items).filter(i => it(i).follow === 'deal').map(i => ({ i, c: candidates(i).find(o => o.q.bigSale) })).filter(d => d.c);
+  // Good deals on everything you keep (staples and "only on sale" items), even when you still have some: time to stock up?
+  // A deal = at least the deal threshold (default 20%) off the crossed-out price or the usual price, on a recent price.
+  // dealAlert === false: you asked not to see this item here (checkbox in Organize, or "Not for this item" below).
+  const deals = Object.keys(DB.items).filter(i => ['normal', 'deal'].includes(it(i).follow) && it(i).dealAlert !== false).map(i => ({ i, c: candidates(i).find(o => o.q.bigSale) })).filter(d => d.c).sort((a, b) => byAisle(a.i, b.i));
   if (deals.length) {
-    v.append($('h3', { textContent: 'On sale this week (items you buy only on sale)' }));
-    deals.forEach(({ i, c }) => { const want = Math.max(1, total(i) - have(i)), on = DB.extra[i] > 0;
-      v.append($('div', { className: 'card bar' }, $('b', { textContent: it(i).name }), $('span', { className: 'st ' + c.p.store[0], textContent: c.p.store }),
+    v.append($('div', { style: 'border-top:3px solid var(--low);margin:26px 0 4px' }),
+      $('h3', { textContent: 'On sale now — stock up?' }),
+      $('p', { className: 'm', textContent: 'Your staples and "only on sale" items at least ' + Math.round(st.dealGap * 100) + '% off this week, whether you need them or not. "Add" puts extra ones on the list, on top of what the count asks for.' }));
+    deals.forEach(({ i, c }) => {
+      const x = it(i), tot = total(i), hv = have(i), on = DB.extra[i] > 0, add = x.follow === 'deal' ? Math.max(1, tot - hv) : Math.max(1, tot || 1);
+      v.append($('div', { className: 'card bar' }, $('b', { textContent: x.name }),
+        $('span', { className: 'm', textContent: 'have ' + hv + (tot ? ' of ' + tot : '') + (need(i) > 0 && x.follow === 'normal' ? ' · on the list' : '') }),
+        $('span', { className: 'st ' + c.p.store[0], textContent: c.p.store }),
         $('span', {}, plink(c.p), ' — ' + money(c.q.price) + ' '), $('span', { className: 'deal', textContent: c.q.saleText }),
-        $('button', { className: on ? 'sm' : 'sm pri', textContent: on ? 'Remove' : 'Add ' + want, onclick: () => { if (on) delete DB.extra[i]; else DB.extra[i] = want; save(); draw(); } }))); });
+        $('button', { className: on ? 'sm' : 'sm pri', textContent: on ? 'Remove the extra ' + DB.extra[i] : 'Add ' + add, onclick: () => { if (on) delete DB.extra[i]; else DB.extra[i] = add; save(); draw(); } }),
+        $('button', { className: 'sm', textContent: 'Not for this item', title: 'Never show this item in "On sale now" (can be turned back on in Organize)', onclick: () => { x.dealAlert = false; save(); draw(); } })));
+    });
   }
 
   // Extras: things you want now and then. Never added on their own: compare, and add with + what you feel like this week.
@@ -703,6 +715,36 @@ function vCompare() {
    its products, and the products set aside by the extension (CATALOG) that can be linked to it.
    ======================================================================================== */
 let OSEL = '', OQ = '', OF = { aisle: '', follow: '', issues: false }, OPQ = null;
+
+// ---- item rules: item.rule = {all:[…], any:[…], none:[…]} (lower-case words or short phrases) ----
+function ruleMatch(rule, p) {
+  const t = ' ' + words(pname(p) + ' ' + (p.size || '')).join(' ') + ' ', has = w => t.includes(' ' + w + ' ') || t.includes(' ' + w + 's ');
+  return (rule.all || []).every(has) && (!(rule.any || []).length || rule.any.some(has)) && !(rule.none || []).some(has);
+}
+const ruleExcl = (rule, p) => { const t = ' ' + words(pname(p)).join(' ') + ' '; return (rule.none || []).some(w => t.includes(' ' + w + ' ') || t.includes(' ' + w + 's ')); };
+// Link matching products from the catalog (this computer) and set linked ones matching "none of" to Never. Returns counts.
+function applyRules(only, opts) {
+  const exclude = !opts || opts.exclude !== false;   // at start-up only new links are made (a product you put back by hand stays)
+  let linked = 0, excluded = 0;
+  Object.keys(DB.items).filter(i => (!only || i === only) && DB.items[i].rule && live(i)).forEach(i => {
+    const rule = it(i).rule;
+    if ((rule.all || []).length || (rule.any || []).length)
+      Object.entries(CATALOG).forEach(([k, p]) => { if (ruleMatch(rule, p)) { DB.products[k] = Object.assign({}, p, { item: i, status: 'ok', n: 0, n12: 0, last: '' }); delete CATALOG[k]; linked++; } });
+    if (exclude) prodsOf(i).forEach(([, p]) => { if (p.status !== 'excluded' && p.status !== 'preferred' && ruleExcl(rule, p)) { p.status = 'excluded'; excluded++; } });
+  });
+  return { linked, excluded };
+}
+// Merge items into "to": products, wanted quantities per area and counts are added up; the merged items disappear.
+function mergeItems(from, to) {
+  const t = it(to); t.targets = t.targets || {};
+  from.filter(f => f !== to && it(f)).forEach(f => {
+    Object.values(DB.products).forEach(p => { if (p.item === f) p.item = to; });
+    Object.entries(it(f).targets || {}).forEach(([a, n]) => { t.targets[a] = (t.targets[a] || 0) + n; });
+    Object.values(DB.counts).forEach(m => { if (m[f]) { const c = m[to]; m[to] = c ? { n: c.n + m[f].n, at: Math.max(c.at, m[f].at), h: [] } : m[f]; delete m[f]; } });
+    if (DB.extra[f]) DB.extra[to] = (DB.extra[to] || 0) + DB.extra[f];
+    delete DB.extra[f]; delete DB.checked[f]; delete PL()[f]; delete PL()[to]; delete DB.items[f];
+  });
+}
 const FOLLOWS = [['normal', 'Normal'], ['extra', 'Extra (now and then)'], ['seasonal', 'Seasonal'], ['deal', 'Only on sale'], ['retired', 'Retired']];
 const MODES = [['cheapest', 'Cheapest'], ['variety', 'Variety'], ['exact', 'Exactly this one']];
 function issues(i) {
@@ -770,7 +812,9 @@ function vOrganize() {
         $('label', {}, 'Follow-up', $('select', { onchange: e => set('follow', e.target.value) }, ...FOLLOWS.map(([vv, l]) => $('option', { value: vv, textContent: l, selected: x.follow === vv })))),
         $('label', {}, 'Choice', $('select', { onchange: e => { const m = e.target.value; if (m === 'exact') x.match = 'preferred'; else { x.match = 'any'; x.choice = m; } delete PL()[i]; saveLocal(); save(); draw(); } },
           ...MODES.map(([vv, l]) => $('option', { value: vv, textContent: l, selected: modeOf(x) === vv })))),
-        $('label', {}, 'Target price', $('input', { type: 'number', step: '0.01', min: 0, value: x.targetPrice == null ? '' : x.targetPrice, onchange: e => set('targetPrice', e.target.value === '' ? null : +e.target.value) }))),
+        $('label', {}, 'Target price', $('input', { type: 'number', step: '0.01', min: 0, value: x.targetPrice == null ? '' : x.targetPrice, onchange: e => set('targetPrice', e.target.value === '' ? null : +e.target.value) })),
+        $('label', {}, 'Deal alerts', $('span', { className: 'row', style: 'margin:0' }, $('input', { type: 'checkbox', checked: x.dealAlert !== false, style: 'width:auto',
+          onchange: e => { if (e.target.checked) delete x.dealAlert; else x.dealAlert = false; save(); draw(); } }), ' show in "On sale now"'))),
       $('h3', { textContent: 'Wanted in each area (total ' + total(i) + ')' }),
       $('div', { className: 'ogrid' }, ...DB.areas.map(a => $('label', {}, a.name, $('input', { type: 'number', min: 0, max: 99, value: tg(a.id, i) || '', placeholder: '0',
         onchange: e => { setT(a.id, i, Math.max(0, Math.round(+e.target.value || 0))); draw(); } })))),
@@ -779,6 +823,26 @@ function vOrganize() {
         $('button', { className: 'sm', textContent: 'Delete item', onclick: () => { if (!confirm('Delete "' + x.name + '"? Its products are put aside (catalog), its counts are removed.')) return;
           prodsOf(i).forEach(([k, p]) => { CATALOG[k] = Object.assign({}, p, { item: null }); delete DB.products[k]; });
           delete DB.items[i]; Object.values(DB.counts).forEach(m => delete m[i]); delete DB.checked[i]; delete DB.extra[i]; delete PL()[i]; OSEL = ''; saveLocal(); save(); draw(); } }))));
+
+    // ---- your rules for this item: which products belong to it, automatically ----
+    const r = x.rule || {}, wl = a => (a || []).join(', '), rl = s => words(s).length ? String(s).split(',').map(t => t.trim().toLowerCase()).filter(Boolean) : [];
+    const rAll = $('input', { type: 'text', value: wl(r.all), placeholder: 'e.g. pork' }), rAny = $('input', { type: 'text', value: wl(r.any), placeholder: 'e.g. roast, loin, shoulder' }),
+      rNone = $('input', { type: 'text', value: wl(r.none), placeholder: 'e.g. chops, ground' }), rRes = $('span', { className: 'm' });
+    const mg = $('input', { type: 'text', placeholder: 'Item to merge into…' }); mg.setAttribute('list', 'orgitems');
+    right.append($('div', { className: 'card' }, $('h3', { style: 'margin-top:0', textContent: 'Rules for this item' }),
+      $('p', { className: 'm', textContent: 'Products seen by the extension whose name matches are added to this item automatically (now and at every price import); linked products matching "none of" are set to Never. Words separated by commas.' }),
+      $('div', { className: 'ogrid' }, $('label', {}, 'Name has all of', rAll), $('label', {}, '…and one of', rAny), $('label', {}, '…but none of', rNone)),
+      $('div', { className: 'row' }, $('button', { className: 'sm pri', textContent: 'Save rules and apply', onclick: () => {
+          const nr = { all: rl(rAll.value), any: rl(rAny.value), none: rl(rNone.value) };
+          if (nr.all.length || nr.any.length || nr.none.length) x.rule = nr; else delete x.rule;
+          const res = applyRules(i); saveLocal(); save(); MSG = 'Rules saved: ' + res.linked + ' product(s) added, ' + res.excluded + ' set to Never.'; draw(); } }), rRes),
+      MSG && MSG.startsWith('Rules saved') ? $('p', { className: 'm', textContent: MSG }) : '',
+      $('h3', { textContent: 'Merge' }),
+      $('div', { className: 'row' }, mg, $('button', { className: 'sm', textContent: 'Merge this item into it', onclick: () => {
+          const to = itemByName(mg.value); if (!to || to === i) { alert('Choose another existing item from the list.'); return; }
+          if (!confirm('Merge "' + x.name + '" into "' + it(to).name + '"? Products, quantities per area and counts are added to it, then "' + x.name + '" is removed.')) return;
+          mergeItems([i], to); OSEL = to; save(); draw(); } }))));
+    if (MSG && MSG.startsWith('Rules saved')) MSG = '';
     const ps = prodsOf(i);
     right.append($('div', { className: 'card' }, $('h3', { style: 'margin-top:0', textContent: ps.length + ' product' + (ps.length === 1 ? '' : 's') + ' compared for this item' }),
       ...ps.map(([k, p]) => prodLine(k, p, i)), ps.length ? '' : $('p', { className: 'm', textContent: 'None yet: link some below.' })));
@@ -816,7 +880,11 @@ function draw() {
   document.body.dataset.tab = tab;
   document.getElementById('nav').replaceChildren(...tabs.map(([k, l, c]) => $('button', { textContent: l, className: (tab === k ? 'on ' : '') + (c || ''), onclick: () => { tab = k; Q = ''; EDIT = false; draw(); } })));
   document.getElementById('ttl').textContent = { count: 'Count', list: 'Shopping list', compare: 'Compare prices', organize: 'Organize items', find: 'Find', scan: 'Barcodes', setup: 'Setup' }[tab];
+  // Redrawing the same screen (after a + / −, a tick…) keeps the page where it was instead of jumping to the top.
+  const keepY = tab === draw.last ? scrollY : 0;
   document.getElementById('app').replaceChildren(banner(), ({ count: vCount, list: vList, compare: vCompare, organize: vOrganize, find: vFind, scan: vScan, setup: vSetup })[tab]());
+  if (keepY) scrollTo(0, keepY);
+  draw.last = tab;
 }
 // ---- one-time corrections to the data (synced: each one runs once, on the first device that loads it) ----
 const FIXES = {
@@ -824,6 +892,22 @@ const FIXES = {
   'bear-paws-out': () => Object.values(DB.products).forEach(p => { if (p.item === 'cookies' && /bear paws/i.test(pname(p))) p.status = 'excluded'; }),
   // "PC Blueberries Cultivated" (2 kg bag) is frozen, not fresh berries.
   'pc-blueberries-frozen': () => Object.values(DB.products).forEach(p => { if (p.item === 'berries' && /blueberries cultivated/i.test(p.name) && DB.items['fruit-frozen-blueberries']) p.item = 'fruit-frozen-blueberries'; }),
+  // 2026-11-06 — tofu dessert: sweetened, not flavoured.
+  'tofu-dessert-plain': () => { const i = 'tofu-dessert'; if (!it(i)) return;
+    it(i).rule = { all: ['tofu', 'dessert'], any: [], none: ['banana', 'chocolate', 'mango', 'strawberry', 'almond', 'vanilla', 'coconut', 'matcha', 'peach', 'ginger'] };
+    prodsOf(i).forEach(([, p]) => { if (flavoursOf(p).length) p.status = 'excluded'; }); },
+  // 2026-11-06 — unsweetened milk: oat, certified gluten-free, only (fridge and shelf-stable).
+  'milk-unsweetened-oat': () => [['milk-unsweetened', false], ['milk-unsweetened-shelf-stable', true]].forEach(([i, shelf]) => { if (!it(i)) return;
+    const x = it(i); x.match = 'preferred'; x.note = 'Oat only, certified gluten-free: a new product counts only once marked ★ preferred.';
+    x.rule = { all: ['oat', 'unsweetened'].concat(shelf ? ['shelf', 'stable'] : []), any: [], none: ['almond', 'soy', 'coconut', 'cashew', 'rice', 'vanilla', 'chocolate', 'barista'].concat(shelf ? [] : ['shelf stable']) };
+    prodsOf(i).forEach(([, p]) => { p.status = /\boat\b/i.test(pname(p)) ? 'preferred' : 'excluded'; }); }),
+  // 2026-11-06 — one "Pork, roast" item: any pork cut that makes a roast.
+  'pork-roast': () => { const old = ['pork-shoulder-roast', 'pork-tenderloin'].filter(i => it(i)); if (!old.length) return;
+    DB.items['pork-roast'] = DB.items['pork-roast'] || { name: 'Pork, roast', aisle: 'Meat & fish', follow: 'normal', targets: {}, match: 'any', choice: 'cheapest', targetPrice: null,
+      note: 'Any pork cut that makes a roast (shoulder, loin, tenderloin, sirloin, butt…).' };
+    mergeItems(old, 'pork-roast');
+    it('pork-roast').rule = { all: ['pork'], any: ['roast', 'tenderloin', 'loin', 'shoulder', 'butt', 'sirloin'],
+      none: ['chop', 'ground', 'rib', 'sausage', 'bacon', 'ham', 'cutlet', 'schnitzel', 'belly', 'hock', 'kabob', 'souvlaki', 'strip', 'cube', 'broth', 'rind', 'jerky'] }; },
 };
 function applyFixes() {
   if (!Object.keys(DB.items).length) return false;
@@ -831,7 +915,7 @@ function applyFixes() {
   Object.entries(FIXES).forEach(([k, f]) => { if (!DB.fixes[k]) { f(); DB.fixes[k] = 1; changed = true; } });
   return changed;
 }
-if (applyFixes()) save();
+{ const fx = applyFixes(), rr = applyRules(null, { exclude: false }); if (rr.linked) saveLocal(); if (fx || rr.linked) save(); }
 draw(); fbInit(parseCfg(cfgText())).catch(e => { SYMSG = 'Sync error: ' + (e.code || e.message); });   // reconnects a device already signed in
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script></body></html>
