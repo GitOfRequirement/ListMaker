@@ -10,3 +10,7 @@ pantry-*.json
 pantry-*.csv
 # Classification workbooks (same data)
 *.xlsx
+# Local backups of the data (export, data file, final workbook)
+_archive/
+# Claude Code local settings (test server)
+.claude/

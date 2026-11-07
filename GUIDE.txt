@@ -43,6 +43,9 @@ CHAQUE SEMAINE
    section (à remettre dans Organize > Deal alerts).
    Section « Extras » : les envies de temps en temps (suivi « Extra ») ;
    jamais ajoutés d'office, on fait + sur ce qu'on veut cette semaine.
+   Produit pas vu en magasin depuis 180 jours (réglable en haut de Compare) :
+   probablement plus vendu, donc jamais proposé ; l'historique est gardé et
+   « Show them » le réaffiche si on veut le choisir quand même.
 
 4. COMMANDER (ordinateur ou téléphone)
    En bas de Compare, un panier Walmart et un panier Maxi :

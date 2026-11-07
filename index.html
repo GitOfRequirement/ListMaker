@@ -420,9 +420,11 @@ function syncUI() {
 const CKEY = 'pantry_catalog';
 let CATALOG = load(CKEY) || {};
 const PL = () => DB.plan || (DB.plan = {});
+const SHOWGONE = new Set();   // items whose "not seen recently" products are unfolded in Compare (this screen only)
 (() => { const old = load('pantry_plan'); if (old && Object.keys(old).length && !Object.keys(PL()).length) { DB.plan = old; persist(); } try { localStorage.removeItem('pantry_plan'); } catch (e) {} })();
 const saveLocal = () => { try { localStorage.setItem(CKEY, JSON.stringify(CATALOG)); } catch (e) { alert('Could not store on this computer: ' + e.message); } };
-const S = () => Object.assign({ varietyGap: 0.2, dealGap: 0.2, staleDays: 10 }, DB.settings || {});
+// availDays: a product not seen in a store for that many days is probably no longer sold: never proposed (history kept).
+const S = () => Object.assign({ varietyGap: 0.2, dealGap: 0.2, staleDays: 10, availDays: 180 }, DB.settings || {});
 const isoAgo = d => new Date(Date.now() - d * 864e5).toISOString().slice(0, 10);
 const median = a => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 // "454 g", "1.89 L", "4 x 235-ml", "12X355ML", "3 lb bag", "30 Eggs", "12 Pack" -> {q, base} with base kg | L | ea
@@ -462,7 +464,9 @@ function quote(key) {
   const onSale = !stale && ((tag != null && tag >= 0.05) || byHist != null);   // badge: at least 5% off
   const bigSale = onSale && Math.max(tag || 0, byHist || 0) >= S().dealGap;   // "only when on sale" items: at least the deal threshold
   const saleText = !onSale ? '' : tag != null && tag >= 0.05 ? '−' + Math.round(tag * 100) + '% (was ' + money(last[4]) + ')' : '−' + Math.round(byHist * 100) + '% vs usual ' + money(usual) + '/' + lu.b;
-  return { date: last[0], price: last[1], unit: lu ? lu.u : null, base: lu ? lu.b : '', was: last[4], usual, off, age, stale, src: last[5], onSale, bigSale, saleText };
+  // gone = not seen anywhere (store page or order) for availDays: probably no longer sold.
+  const seen = s[s.length - 1][0], gone = Math.floor((Date.now() - new Date(seen + 'T12:00:00')) / 864e5) > S().availDays;
+  return { date: last[0], price: last[1], unit: lu ? lu.u : null, base: lu ? lu.b : '', was: last[4], usual, off, age, stale, src: last[5], onSale, bigSale, saleText, seen, gone };
 }
 // A link that really leads to this product (its code in the address); otherwise a search for it on the right site.
 function purl(p) {
@@ -524,7 +528,7 @@ function sameKind(a, b) {
 }
 // The app's proposal for an item: {productKey: qty}
 function propose(i, qty) {
-  const cs = candidates(i); if (!cs.length) return {};
+  const cs = candidates(i).filter(o => !o.q.gone); if (!cs.length) return {};   // never propose a product probably no longer sold
   // Cheapest / exactly: the cheapest product with a recent price (an old price only when nothing recent).
   if (modeOf(it(i)) !== 'variety') { const f = cs.find(o => !o.q.stale) || cs[0]; return { [f.k]: qty }; }
   // Variety: the cheapest product of each KIND (Gala, Empire…; vanilla, strawberry…), up to 4 kinds, each within X%
@@ -601,6 +605,9 @@ function vCompare() {
     $('div', { className: 'row m' }, 'Variety: options up to ', $('input', { type: 'number', min: 0, max: 100, value: Math.round(st.varietyGap * 100), style: 'width:70px;flex:none', onchange: e => { DB.settings = Object.assign({}, DB.settings, { varietyGap: (+e.target.value || 0) / 100 }); save(); draw(); } }),
       '% above the best price · a deal = ', $('input', { type: 'number', min: 0, max: 100, value: Math.round(st.dealGap * 100), style: 'width:70px;flex:none', onchange: e => { DB.settings = Object.assign({}, DB.settings, { dealGap: (+e.target.value || 0) / 100 }); save(); draw(); } }),
       '% under the usual price'),
+    $('div', { className: 'row m' }, 'Products not seen in a store for ', $('input', { type: 'number', min: 7, max: 730, value: st.availDays, style: 'width:70px;flex:none',
+      onchange: e => { DB.settings = Object.assign({}, DB.settings, { availDays: Math.max(3, Math.round(+e.target.value || 180)) }); save(); draw(); } }),
+      ' days are set aside (maybe no longer sold): never proposed, history kept.'),
     MSG ? $('p', { className: 'm', textContent: MSG }) : ''));
   MSG = '';
   if (!rows.length) v.append($('p', { className: 'm', textContent: 'Nothing on the shopping list. Count your areas first (or add seasonal items from the List tab).' }));
@@ -626,14 +633,18 @@ function vCompare() {
         extra && chosen ? $('button', { className: 'sm', textContent: 'None this week', onclick: () => { delete PL()[i]; save(); draw(); } }) : '',
         !extra && chosen !== q ? $('span', { className: 'w', textContent: chosen + ' of ' + q + ' chosen' }) : ''));
     if (!cs.length) card.append($('p', { className: 'w', textContent: mode === 'exact' ? 'No preferred product with a price. Mark one with ★ or switch the mode.' : 'No price for this item yet: read the stores’ pages with the extension, then import.' }));
+    // Products not seen for availDays are probably gone: kept apart, never proposed (you can still pick one by hand).
+    const avail = cs.filter(o => !o.q.gone), gone = cs.filter(o => o.q.gone);
+    if (cs.length && !avail.length) card.append($('p', { className: 'w', textContent: 'No product seen in the last ' + S().availDays + ' days: read the stores’ pages (« Tout lire ») and import, or pick an older one below.' }));
     // Variety: the cheapest of each kind first, then the others.
-    let order = cs;
-    if (mode === 'variety' && cs.length > 1) {
-      const kinds = kindsOf(i, cs), heads = [];
-      cs.forEach(o => { if (!heads.some(g => sameKind(kinds.get(o.k), kinds.get(g.k)))) heads.push(o); });
-      order = heads.concat(cs.filter(o => !heads.includes(o)));
+    let order = avail;
+    if (mode === 'variety' && avail.length > 1) {
+      const kinds = kindsOf(i, avail), heads = [];
+      avail.forEach(o => { if (!heads.some(g => sameKind(kinds.get(o.k), kinds.get(g.k)))) heads.push(o); });
+      order = heads.concat(avail.filter(o => !heads.includes(o)));
     }
-    const show = order.filter((o, n) => n < 5 || plan[o.k]);
+    const openGone = SHOWGONE.has(i);
+    const show = order.filter((o, n) => n < 5 || plan[o.k]).concat(gone.filter(o => openGone || plan[o.k]));
     show.forEach(o => {
       const n = plan[o.k] || 0, qt = o.q;
       if (n) basket[o.p.store].push({ i, k: o.k, p: o.p, n, q: qt });
@@ -642,14 +653,19 @@ function vCompare() {
         $('div', { className: 'pn' }, o.p.status === 'preferred' ? '★ ' : '', plink(o.p),
           o.p.size ? $('span', { className: 'old', textContent: ' · ' + o.p.size }) : '',
           qt.onSale ? $('span', { className: 'deal', textContent: ' on sale ' + qt.saleText }) : '',
-          $('div', { className: 'old', textContent: (qt.src === 'order' ? 'paid ' : 'seen ') + qt.date + (qt.stale ? ' (old price)' : '') + (qt.usual ? ' · usual ' + money(qt.usual) + '/' + qt.base : '') }),
+          $('div', { className: qt.gone ? 'w' : 'old', textContent: (qt.gone ? 'not seen since ' + qt.seen + ' — maybe no longer sold · ' : '') + (qt.src === 'order' ? 'paid ' : 'seen ') + qt.date + (qt.stale && !qt.gone ? ' (old price)' : '') + (qt.usual ? ' · usual ' + money(qt.usual) + '/' + qt.base : '') }),
           $('span', { className: 'mini' }, $('button', { textContent: o.p.status === 'preferred' ? '★ preferred' : '☆', title: 'Preferred product', onclick: () => { o.p.status = o.p.status === 'preferred' ? 'ok' : 'preferred'; save(); draw(); } }),
             $('button', { textContent: 'Never this one', onclick: () => { if (confirm('Exclude "' + pname(o.p) + '" from future comparisons?')) { o.p.status = 'excluded'; if (PL()[i]) delete PL()[i][o.k]; save(); draw(); } } }))),
         $('div', { className: 'num', textContent: money(qt.price) }),
         $('div', { className: 'num u', textContent: fmtU(qt) }),
         $('div', { className: 'step' }, $('button', { textContent: '−', onclick: () => setPlan(o.k, n - 1) }), $('b', { textContent: n }), $('button', { textContent: '+', onclick: () => setPlan(o.k, n + 1) }))));
     });
-    if (order.length > show.length) card.append($('div', { className: 'm', textContent: (order.length - show.length) + ' more option(s), more expensive.' }));
+    const hiddenAvail = order.filter(o => !show.includes(o)).length;
+    if (hiddenAvail) card.append($('div', { className: 'm', textContent: hiddenAvail + ' more option(s), more expensive.' }));
+    const hiddenGone = gone.filter(o => !show.includes(o)).length;
+    if (gone.length && (hiddenGone || openGone)) card.append($('div', { className: 'row', style: 'margin:4px 0 0' },
+      $('span', { className: 'm', textContent: openGone ? '' : hiddenGone + ' product(s) not seen in the last ' + S().availDays + ' days (maybe no longer sold).' }),
+      $('button', { className: 'sm', textContent: openGone ? 'Hide old products' : 'Show them', onclick: () => { if (openGone) SHOWGONE.delete(i); else SHOWGONE.add(i); draw(); } })));
     return card;
   };
 
