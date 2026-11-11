@@ -39,18 +39,22 @@ async function missing({ minTimes = 2, maxAge = 14, months = 12, store = null } 
 }
 
 // Products bought regularly (≥ minTimes orders, last one within `months`) that are not known to be in the target list.
-// Ignores price freshness and earlier searches: only list membership matters here.
+// Ignores price freshness: only list membership matters here.
 // Known membership comes from list/My Items pages read with the extension, and from earlier "added"/"already" results.
+// A product searched and NOT found in the last 30 days is skipped (probably no longer sold); it comes back after that.
 async function notInList({ store, listName, minTimes = 2, months = 12 }) {
   const all = await chrome.storage.local.get(null);
-  const since = day(-Math.round(months * 30.4)), want = String(listName || '').trim().toLowerCase();
+  const since = day(-Math.round(months * 30.4)), want = String(listName || '').trim().toLowerCase(), month = day(-30);
   // Walmart: a product on "My Items" is covered too (that page is re-read every week anyway).
   const ok = store === 'Walmart' ? [want, 'my items'] : [want];
   const inList = new Set(), counts = new Map();
   for (const [k, v] of Object.entries(all)) {
     if (k.startsWith('p:') && v.store === store && (v.inLists || []).some(n => ok.includes(n.trim().toLowerCase())))
       [v.productId, ...(v.altIds || [])].forEach(id => inList.add(id));
-    if (k.startsWith('m:' + store + ':') && ['added', 'already'].includes(v.listResult) && (v.list || listName).toLowerCase() === want) inList.add(k.split(':').slice(2).join(':'));
+    if (!k.startsWith('m:' + store + ':')) continue;
+    const id = k.split(':').slice(2).join(':');
+    if (['added', 'already'].includes(v.listResult) && (v.list || listName).toLowerCase() === want) inList.add(id);
+    else if (!v.found && v.d >= month) inList.add(id);
   }
   for (const [k, o] of Object.entries(all)) {
     if (!k.startsWith('o:' + store + ':')) continue;

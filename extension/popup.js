@@ -42,6 +42,15 @@ async function render() {
     const bad = Object.entries(L).filter(([k]) => !['added', 'already'].includes(k)).map(([k, v]) => `${v} × ${k}`);
     if (bad.length) parts.push('problèmes d\'ajout : ' + bad.join(', '));
     box.append(card('Dernier relevé des manquants', parts.join(' · ')));
+    // The names of the products not found: add them by hand if you still want them, otherwise ignore.
+    const lost = (b.errors || []).map(e => e.name).filter(Boolean);
+    if (lost.length) {
+      const det = document.createElement('details'), sum = document.createElement('summary'), ul = document.createElement('ul');
+      sum.textContent = `Voir les ${lost.length} produits non trouvés`; sum.className = 'm';
+      lost.sort().forEach(n => ul.append(Object.assign(document.createElement('li'), { textContent: n })));
+      ul.style.cssText = 'margin:4px 0 0;padding-left:18px;max-height:220px;overflow:auto;font-size:12px';
+      det.append(sum, ul); box.append(det);
+    }
   } else if (b && b.failed) {
     box.append(card('Dernière capture en lot', `${b.failed} commande(s) non lue(s). Ouvrez-les à la main pour réessayer.`));
   }

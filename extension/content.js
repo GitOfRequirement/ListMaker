@@ -138,29 +138,42 @@
 
   // Maxi product page: "Add to List" opens a menu of the account's lists; each entry says whether the product is in it.
   async function addMaxiList(p) {
-    let group = null;
-    for (let i = 0; i < 30 && !group; i++) {
-      group = [...document.querySelectorAll('.product-button-group')].find(g =>
-        g.querySelector('.add-to-list-button') && (g.querySelector('[data-track-products-array]') || {}).getAttribute?.('data-track-products-array')?.includes(p.sku));
-      if (!group) await sleep(500);
-    }
-    if (!group) return 'no-button';
-    const entry = () => [...group.querySelectorAll('.shopping-list-button')].find(b => clean(b.textContent).toLowerCase() === String(p.list || '').trim().toLowerCase());
-    // Open the menu (its entries may already be in the page, but hidden), then wait for our list's entry.
-    group.querySelector('.add-to-list-button').click(); await sleep(800);
-    for (let i = 0; i < 12 && !entry(); i++) await sleep(400);
+    // The product's code is on the "Add" (cart) button inside the group, or on a wrapper around it
+    // (when the product is already in the cart, the cart button becomes a quantity stepper without the code).
+    const mine = g => [g.querySelector('[data-track-products-array]'), g.closest('[data-track-products-array]')]
+      .some(e => e && (e.getAttribute('data-track-products-array') || '').includes(p.sku));
+    // Always look the group up again: the page re-draws it after a click, and an old copy never changes.
+    const findGroup = () => [...document.querySelectorAll('.product-button-group')].find(g => g.querySelector('.add-to-list-button') && mine(g));
+    const want = String(p.list || '').trim().toLowerCase();
+    const entry = () => { const g = findGroup(); return g && [...g.querySelectorAll('.shopping-list-button')].find(b => clean(b.textContent).toLowerCase() === want); };
+    const open = async () => {
+      const g = findGroup(); if (!g) return;
+      if (!g.querySelector('.add-to-list--active')) g.querySelector('.add-to-list-button').click();   // a second click would close it
+      await sleep(800); for (let i = 0; i < 12 && !entry(); i++) await sleep(400);
+    };
+    for (let i = 0; i < 30 && !findGroup(); i++) await sleep(500);
+    if (!findGroup()) return 'no-button';
+    await open();
     const b = entry();
     if (!b) return 'list-not-found';
     if (/--with-product/.test(b.className)) return 'already';
+    // Click only when the menu clearly says "not in this list": the entry is a toggle, a click on a product
+    // already in the list would remove it.
+    if (!/--without-product/.test(b.className)) return 'unknown-state';
     b.click();
-    for (let i = 0; i < 16; i++) { await sleep(400); const e = entry(); if (e && /--with-product/.test(e.className)) return 'added'; }
+    for (let i = 0; i < 20; i++) {
+      await sleep(400);
+      const e = entry();
+      if (e && /--with-product/.test(e.className)) return 'added';
+      if (i === 6 || i === 13) await open();   // the menu often closes after an add: re-open it to read the result
+    }
     return 'not-confirmed';
   }
 
   async function finishMaxiAdd(p) {
     say(`Ajout de « ${p.name} » à la liste « ${p.list} »…`);
     const r = await addMaxiList(p);
-    const words = { added: '✓ Ajouté à la liste', already: '✓ Déjà dans la liste', 'list-not-found': `⚠ Liste « ${p.list} » introuvable dans le menu`, 'no-button': '⚠ Bouton « Add to List » introuvable', 'not-confirmed': '⚠ Ajout non confirmé' };
+    const words = { added: '✓ Ajouté à la liste', already: '✓ Déjà dans la liste', 'unknown-state': '⚠ État du menu illisible (rien cliqué)','list-not-found': `⚠ Liste « ${p.list} » introuvable dans le menu`, 'no-button': '⚠ Bouton « Add to List » introuvable', 'not-confirmed': '⚠ Ajout non confirmé' };
     say(`${words[r] || r} : ${p.name}.`);
     await batchNext(true, { productId: p.sku, store: 'Maxi', foundName: p.name, listResult: r });
   }
@@ -220,7 +233,7 @@
     if (!fresh.length) return;
     const keys = fresh.map(p => 'p:' + site.store + ':' + p.productId);
     const old = await chrome.storage.local.get(keys);
-    const d = today(), src = clean(document.title).slice(0, 80) || location.pathname, upd = {};
+    const d = today(), src = clean(document.title).slice(0, 80) || location.pathname, upd = {}, onList = await maxiListPage();
     fresh.forEach((p, i) => {
       const k = keys[i];
       const rec = old[k] || { store: site.store, productId: p.productId, altIds: [], firstSeen: d, obs: [] };
@@ -234,6 +247,8 @@
         rec.inLists = [...new Set([...(p.inLists || rec.inLists || []), ...(onMyItems || prevMy ? ['My Items'] : [])])];
         rec.listsSeen = d;
       }
+      // Maxi: every product shown on one of the account's list pages is in that list.
+      if (onList) { rec.inLists = [...new Set([...(rec.inLists || []), onList])]; rec.listsSeen = d; }
       const ob = { d, price: p.price, wasPrice: p.wasPrice, unitPrice: p.unitPrice, unitBase: p.unitBase, unitRaw: p.unitRaw, deal: p.deal, dealText: p.dealText, expiry: p.expiry, src };
       const same = rec.obs.findIndex(o => o.d === d);
       if (same >= 0) rec.obs[same] = ob; else rec.obs.push(ob);
@@ -245,6 +260,14 @@
       [['Tout lire (défilement et pages)', () => readAll(), true]]);
   }
   function clean(s) { return String(s || '').replace(/\s+/g, ' ').trim(); }
+  // On a Maxi shopping-list page whose title or heading names the list chosen in the popup: that list's name, else ''.
+  async function maxiListPage() {
+    if (site.store !== 'Maxi' || !/list/i.test(location.pathname)) return '';
+    const st = (await chrome.storage.local.get('settings')).settings || {};
+    const name = String(st.listName || 'ListMaker').trim(), low = name.toLowerCase();
+    const heads = [document.title, ...[...document.querySelectorAll('h1, h2')].slice(0, 4).map(h => h.textContent)].map(t => clean(t).toLowerCase());
+    return heads.some(t => t === low || t.startsWith(low + ' ') || t.includes(low + ' |') || t.includes(low + ' -')) ? name : '';
+  }
 
   // ---------- "Tout lire": scroll to the bottom, click "load more" / "next page" until the end ----------
   const AR = 'pantryAutoRead';
