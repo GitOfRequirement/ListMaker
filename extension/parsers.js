@@ -304,6 +304,26 @@
           url: a ? new URL(a.getAttribute('href'), 'https://www.maxi.ca').href.split('?')[0] : ''
         });
       });
+      // A product's own page (no tile): its code is in the address (/p/21245347_EA).
+      const pdp = doc.querySelector('.product-details-page-details');
+      const pid = ((doc.location && doc.location.pathname || '').match(/\/p\/(\w+)/) || [])[1];
+      if (pdp && pid && !seen.has(pid)) {
+        seen.add(pid);
+        const sale = pdp.querySelector('[class*="selling-price-list__item__price--sale__value"]');
+        const reg = pdp.querySelector('.selling-price-list .price__value');
+        const was = pdp.querySelector('[class*="--was-price__value"]');
+        const cmp = pdp.querySelector('.comparison-price-list__item');
+        const price = money(text(sale || reg));
+        if (price != null) out.push({
+          productId: pid, altIds: [],
+          name: text(pdp.querySelector('.product-name__item--name')), brand: text(pdp.querySelector('.product-name__item--brand')),
+          size: text(pdp.querySelector('.product-name__item--package-size')),
+          price, wasPrice: was ? money(text(was)) : null,
+          ...unitPrice(text(cmp)),
+          deal: sale ? 'sale' : '', dealText: text(pdp.querySelector('.product-badge__text')), expiry: '', bought: '',
+          url: 'https://www.maxi.ca' + doc.location.pathname
+        });
+      }
       return out;
     }
   };

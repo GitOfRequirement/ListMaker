@@ -38,6 +38,11 @@ DECISIONS = {
         ('Bread, white', r'white miche', 'preferred'),
         ('Bread, gluten-free', r'white', 'preferred'),
         ('Broth, chicken bone', r'^imagine chicken bone broth$', 'preferred'),
+        ('Cookies', r'bear paws', 'excluded'),                       # 2026-11-06: no more Bear Paws
+    ],
+    # products moved to another article: (from article, regex on "brand name", to article)
+    'move': [
+        ('Berries', r'blueberries cultivated', 'Fruit, frozen, blueberries'),   # PC 2 kg bag = frozen
     ],
 }
 
@@ -94,6 +99,9 @@ for r in range(2, wp.max_row + 1):
     products[key] = {'store': store, 'id': pid or '', 'alt': [], 'name': name, 'brand': brand or '', 'item': iid, 'status': 'ok', 'url': '',
                      'n': len(h['orders']), 'n12': sum(1 for dt, _ in h['orders'].values() if dt >= Y1), 'last': h['last'],
                      'qty': round(sum(q for _, q in h['orders'].values()) / max(1, len(h['orders'])), 1)}
+for src, rx, dst in DECISIONS.get('move', []):
+    for p in products.values():
+        if p['item'] == name2id[src] and re.search(rx, (p['brand'] + ' ' + p['name']).strip(), re.I): p['item'] = name2id[dst]
 for art, rx, status in DECISIONS['status']:
     iid = name2id[art]
     for p in products.values():   # match on "brand name" (Maxi keeps the brand apart from the name)
@@ -110,7 +118,8 @@ for p in d['products']:
 for key, p in products.items():
     sp = by_id.get(key)
     if sp:   # same product seen on a page: fill url, size, alt ids, and use the page's key for its prices
-        p['url'] = sp.get('url') or ''
+        u = sp.get('url') or ''   # keep only a link that really leads to this product (its code in the address)
+        p['url'] = u if any(i and i in u for i in [p['id'], sp['productId'], *(sp.get('altIds') or [])]) else ''
         p['size'] = sp.get('size') or ''
         p['alt'] = sorted({sp['productId'], *(sp.get('altIds') or [])} - {p['id']})
         k2 = sp['store'][0] + ':' + sp['productId']

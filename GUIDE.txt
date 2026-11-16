@@ -28,6 +28,10 @@ CHAQUE SEMAINE
    - Dans l'app, onglet Compare : « Import prices from the extension ».
 
 3. COMPARER ET CHOISIR (ordinateur, onglet Compare)
+   En arrivant : « New week — start over » (en haut) efface les choix de la
+   semaine passée (choix, extras, +1, choix libres, coches de List) et l'app
+   repart des comptes actuels. Les comptes, eux, restent.
+   Chaque article montre « have 2 of 4 » : ce qu'il y a à la maison / la cible.
    Pour chaque article à acheter, l'app propose le produit selon son mode :
      Cheapest   le moins cher au kilo / litre / unité
      Variety    2 à 4 options proches du meilleur prix, en alternance
@@ -39,10 +43,22 @@ CHAQUE SEMAINE
    fraise…). Si une sorte est mal reconnue : Organize > le produit > « Kind ».
    Section « On sale now — stock up? » : vos articles de base et « seulement
    en rabais » à au moins 20 % de rabais, même si vous en avez encore.
-   « Add » en ajoute en surplus ; « Not for this item » le retire de cette
-   section (à remettre dans Organize > Deal alerts).
+   « +1 » / « −1 » en ajoute ou en retire un, en plus de la liste ;
+   « planned this week » = tout ce qui est prévu pour cet article.
+   « Not for this item » le retire de cette section (à remettre dans
+   Organize > Deal alerts).
    Section « Extras » : les envies de temps en temps (suivi « Extra ») ;
    jamais ajoutés d'office, on fait + sur ce qu'on veut cette semaine.
+   Section « Free choice » : un achat hors liste (un steak…). Taper le mot,
+   « Compare » ; si peu de prix récents, « Search at Maxi / Walmart » ouvre
+   les recherches (l'extension lit les prix), puis « Import prices ».
+   Toujours au moins une option par épicerie et au moins 2 options ; sinon
+   « No option at Maxi ». Les options en italique « new — is it a … ? » sont
+   des produits vus par l'extension mais pas encore rattachés : « ✓ Yes »
+   les ajoute à l'article, « ✕ Not this item » ne les propose plus.
+   Prix au kilo égal (à 2 % près) : le moins cher en prix affiché passe avant.
+   Papier de toilette : prix par rouleau ordinaire (« 24 Double = 48 ») ;
+   mouchoirs : prix par 100 mouchoirs (le nombre de plis n'est pas compté).
    Produit pas vu en magasin depuis 180 jours (réglable en haut de Compare) :
    probablement plus vendu, donc jamais proposé ; l'historique est gardé et
    « Show them » le réaffiche si on veut le choisir quand même.
@@ -51,7 +67,8 @@ CHAQUE SEMAINE
    En bas de Compare, un panier Walmart et un panier Maxi :
    « Open all pages » ouvre chaque produit pour l'ajouter au panier du site,
    « Copy » copie la liste (quantité + nom).
-   Sur le téléphone, l'onglet List montre les mêmes choix, avec les liens.
+   Sur le téléphone, l'onglet List montre les mêmes choix, avec les liens ;
+   le gros chiffre = la quantité à mettre au panier (celle choisie dans Compare).
    Cocher un article dans List le retire des paniers.
 
 

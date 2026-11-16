@@ -36,6 +36,8 @@ body[data-tab=compare] main{max-width:1180px}
 .st{font-size:12px;font-weight:700;border-radius:6px;padding:2px 6px;text-align:center}.st.W{background:#0071ce;color:#fff}.st.M{background:#e2231a;color:#fff}
 .deal{color:var(--low);font-weight:700;font-size:13px}.old{color:var(--mut);font-size:12px}
 .ihead{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.ihead .qty{min-width:28px}.ihead .nm{flex:1;margin:0}
+.have{font-size:13px;color:var(--mut);border:1px solid var(--bd);border-radius:999px;padding:2px 9px;white-space:nowrap}
+.opt.sug{border-top-style:dashed}.opt.sug .pn{font-style:italic}
 .mini{display:inline-flex;gap:4px}.mini button{padding:2px 8px;font-size:13px}
 .basket{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}.basket table{width:100%;border-collapse:collapse;font-size:14px}.basket td{padding:4px 2px;border-top:1px solid var(--bd);vertical-align:top}
 @media(max-width:700px){.opt{grid-template-columns:50px minmax(0,1fr) 84px;}.opt .u{display:none}.opt .step{grid-column:2/4}}
@@ -183,7 +185,7 @@ function listRows(compare) {
   Object.keys(DB.items).forEach(i => {
     const x = it(i);
     if (x.follow === 'normal' && need(i) > 0) rows.push({ i, q: need(i) + (DB.extra[i] || 0), skip: !compare && skip.has(i) });
-    else if (x.follow === 'extra') { const n = Object.values(PL()[i] || {}).reduce((s, k) => s + k, 0); if (n > 0 && !compare) rows.push({ i, q: n, extra: true }); }
+    else if (x.follow === 'extra') { const n = Object.values(manualOf(i) || {}).reduce((s, k) => s + k, 0); if (n > 0 && !compare) rows.push({ i, q: n, extra: true }); }
     else if (x.follow !== 'retired' && DB.extra[i] > 0) rows.push({ i, q: DB.extra[i], extra: true });
   });
   return rows.sort((r1, r2) => byAisle(r1.i, r2.i));
@@ -192,17 +194,20 @@ const copy = t => { try { navigator.clipboard.writeText(t); MSG = 'Copied.'; } c
 // Products chosen in Compare (on the computer) for this item, if recent: [{p, n}]; null = use the usual products.
 function picked(i) {
   const pk = DB.picks; if (!pk || !pk.items || !pk.items[i] || Date.now() - pk.at > 14 * 864e5) return null;
-  const out = Object.entries(pk.items[i]).map(([k, n]) => ({ p: DB.products[k], n })).filter(x => x.p && x.n > 0);
+  const out = Object.entries(pk.items[i]).map(([k, n]) => ({ p: DB.products[k], n })).filter(x => x.p && x.p.item === i && x.n > 0);
   return out.length ? out : null;
 }
 function vList() {
   const all = listRows(), rows = all.filter(r => !r.skip), skippedRows = all.filter(r => r.skip);
+  // The big number = what goes in the cart: the packs chosen in Compare when there is a choice, else what the count asks for.
+  rows.forEach(r => { const pk = picked(r.i); if (pk) r.q = pk.reduce((s, x) => s + x.n, 0); });
+  const free = Object.values(DB.free || {});
   const v = $('div');
   let nc = 0; Object.keys(DB.items).forEach(i => { if (it(i).follow === 'normal') nc += unc(i).length; });
   // Per store: the products chosen in Compare when there are some, otherwise the usual product at that store.
   const forStore = s => rows.filter(r => !DB.checked[r.i]).flatMap(r => { const pk = picked(r.i);
     if (pk) return pk.filter(x => x.p.store === s).map(x => x.n + '\t' + pname(x.p));
-    const p = usual(r.i, s); return p ? [r.q + '\t' + pname(p)] : []; }).join('\n');
+    const p = usual(r.i, s); return p ? [r.q + '\t' + pname(p)] : []; }).concat(free.filter(f => f.store === s).map(f => f.n + '\t' + f.name)).join('\n');
   v.append($('div', { className: 'bar' }, $('b', { textContent: rows.length + ' item' + (rows.length === 1 ? '' : 's') + ' to buy' }),
     $('button', { className: 'sm', textContent: 'Copy list', title: 'quantity <tab> item, one per line', onclick: () => { copy(rows.filter(r => !DB.checked[r.i]).map(r => r.q + '\t' + it(r.i).name).join('\n')); draw(); } }),
     $('button', { className: 'sm', textContent: 'Copy for Walmart', onclick: () => { copy(forStore('Walmart')); draw(); } }),
@@ -224,7 +229,13 @@ function vList() {
           : [pw ? $('div', { className: 'prod', textContent: 'Walmart: ' + pname(pw) }) : '', pm ? $('div', { className: 'prod', textContent: 'Maxi: ' + pname(pm) }) : ''])),
       $('button', { className: 'sm', textContent: 'Copy', title: 'Copy the item name', onclick: () => { copy(x.name); draw(); } })));
   });
-  if (!rows.length) v.append($('p', { className: 'm', textContent: 'Nothing to buy. Count your areas first.' }));
+  if (free.length) {
+    v.append($('div', { className: 'aisle', textContent: 'Free choice' }));
+    free.forEach(f => v.append($('div', { className: 'card li' }, $('div', { className: 'qty', textContent: f.n }),
+      $('div', { className: 'body' }, $('div', { className: 'prod' }, $('span', { className: 'st ' + f.store[0], textContent: f.store }), ' ', $('a', { href: f.url, target: '_blank', rel: 'noopener', textContent: f.name }))),
+      $('button', { className: 'sm', textContent: 'Copy', onclick: () => { copy(f.name); draw(); } }))));
+  }
+  if (!rows.length && !free.length) v.append($('p', { className: 'm', textContent: 'Nothing to buy. Count your areas first.' }));
   if (skippedRows.length) v.append($('p', { className: 'm', textContent: 'Skipped this week (set to 0 in Compare): ' + skippedRows.map(r => it(r.i).name).join(', ') + '.' }));
   // Seasonal reminders: never added automatically; one tap puts them on the list.
   const seas = Object.keys(DB.items).filter(i => it(i).follow === 'seasonal').sort(byAisle);
@@ -428,8 +439,26 @@ const S = () => Object.assign({ varietyGap: 0.2, dealGap: 0.2, staleDays: 10, av
 const isoAgo = d => new Date(Date.now() - d * 864e5).toISOString().slice(0, 10);
 const median = a => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 // "454 g", "1.89 L", "4 x 235-ml", "12X355ML", "3 lb bag", "30 Eggs", "12 Pack" -> {q, base} with base kg | L | ea
+// Paper goods: toilet paper / paper towels by single-roll equivalent ("24 Double Rolls = 48 Single Rolls"),
+// facial tissues per 100 tissues ("12 Flat Boxes, 126 Tissues per Box", "6 Boxes, 78 Sheets Each").
+function paperSize(s) {
+  const rolls = /toilet|bathroom|bath tissue|paper towel|towels?\b/.test(s) || (/rolls?\b/.test(s) && !/facial/.test(s));
+  if (rolls && !/tape|foil|wrap|parchment|cinnamon|sushi|spring|egg roll|fruit/.test(s)) {
+    // "24 Double Rolls = 48 Single Rolls", "15 Equal 30 Rolls", "30 = 80": the regular-roll equivalent.
+    let m = s.match(/(?:=|\bequals?\b)\s*(\d+)/); if (m) return { q: +m[1], base: 'roll' };
+    m = s.match(/(\d+)\s*(single|regular|double|triple|mega|super mega|jumbo|big|huge|large)?\s*rolls?\b/);
+    if (m) return { q: +m[1] * ({ double: 2, triple: 3, mega: 4, 'super mega': 6 }[m[2]] || 1), base: 'roll' };
+    return null;
+  }
+  let m;
+  m = s.match(/(\d+)\s*(?:flat |cube |upright )?(?:boxes|box|pack)\b.*?(\d+)\s*(?:tissues|sheets)\s*(?:per box|each|\/box|per)?/) || s.match(/(\d+)\s*(?:tissues|sheets)\s*(?:per box|each).*?(\d+)\s*(?:flat |cube )?boxes/);
+  if (m && /tissue|sheets/.test(s)) return { q: +m[1] * +m[2] / 100, base: '100 tissues' };
+  m = s.match(/(\d+)\s*(?:tissues|sheets)\b/); if (m && /tissue/.test(s)) return { q: +m[1] / 100, base: '100 tissues' };
+  return null;
+}
 function parseSize(s) {
   s = String(s || '').toLowerCase().replace(/(\d),(\d)/g, '$1.$2');
+  const pp = /roll|tissue/.test(s) ? paperSize(s) : null; if (pp) return pp;
   // oz = weight ounce (28.35 g), fl oz = fluid ounce (29.57 ml)
   const nz = (q, u) => u === 'g' ? { q: q / 1000, base: 'kg' } : u === 'kg' ? { q, base: 'kg' } : /^lbs?$/.test(u) ? { q: q * 0.45359, base: 'kg' }
     : /^fl/.test(u) ? { q: q * 0.0295735, base: 'L' } : u === 'oz' ? { q: q * 0.0283495, base: 'kg' } : u === 'ml' ? { q: q / 1000, base: 'L' } : { q, base: 'L' };
@@ -440,21 +469,37 @@ function parseSize(s) {
     const n = pk && +pk[1] !== +m[1] && +pk[1] > 1 && +pk[1] <= 48 ? +pk[1] : 1;
     return nz(+m[1] * n, m[2]);
   }
-  m = s.match(/(\d+)\s*(count|ct|pack|pk|eggs|bars|rolls|units|pcs|pieces|pouches|packets|tablets|patties)\b/); if (m) return { q: +m[1], base: 'ea' };
+  m = s.match(/(\d+)\s*(count|ct|pack|pk|eggs|bars|units|pcs|pieces|pouches|packets|tablets|patties|ea|each|heads|bunches)\b/); if (m) return { q: +m[1], base: 'ea' };
+  // "Pack of 3", "Bag of 6" (no weight): so many units. "Sold in singles", "Single Wrap", "each": one unit.
+  m = s.match(/(?:pack|bag|box|case|set) of (\d+)/); if (m) return { q: +m[1], base: 'ea' };
+  if (/\bsold (?:in |as )?singles?\b|\bsingle wrap\b|\bsold individually\b|\b(?:1|one) (?:ea|each|unit)\b|\beach\b/.test(s)) return { q: 1, base: 'ea' };
   return null;
 }
+// Size of a product: its size field, else its name. Paper goods always by roll / tissue count (the stores' "/ea" means a pack).
+function sizeOf(p) {
+  if (sizeOf.c.has(p)) return sizeOf.c.get(p);
+  const n = String(p.name || '').toLowerCase(), paper = /roll|tissue/.test(n) ? paperSize(n.replace(/(\d),(\d)/g, '$1.$2')) : null;
+  const z = paper || parseSize(p.size) || parseSize(p.name);
+  sizeOf.c.set(p, z); return z;
+}
+sizeOf.c = new WeakMap();
 // Unit price of one price point [date, price, unitPrice, unitBase, was, source] for product p.
-function unitOf(x, p) {
+// Without a unit price on that point: the size read from the product, else the quantity implied by another point
+// of the same product that had both (price ÷ unit price), so an order price gets a unit price too.
+function unitOf(x, p, key) {
+  const z = sizeOf(p);
+  if (z && ['roll', '100 tissues'].includes(z.base)) return z.q > 0 && x[1] != null ? { u: x[1] / z.q, b: z.base } : null;
   if (x[2] != null && x[3]) return { u: x[2], b: x[3] };
-  const z = parseSize(p.size) || parseSize(p.name);
-  return z && z.q > 0 && x[1] != null ? { u: x[1] / z.q, b: z.base } : null;
+  if (z && z.q > 0 && x[1] != null) return { u: x[1] / z.q, b: z.base };
+  const ref = key && x[1] != null ? (PRICES[key] || []).find(y => y[1] && y[2] && y[3]) : null;
+  return ref ? { u: x[1] / (ref[1] / ref[2]), b: ref[3] } : null;
 }
 // What a product costs now, its usual (median, 6 months) unit price and how far below usual it is.
 function quote(key) {
   const s = PRICES[key] || [], p = DB.products[key] || CATALOG[key]; if (!s.length || !p) return null;
-  const shelf = s.filter(x => x[5] === 'shelf'), src = shelf.length ? shelf : s, last = src[src.length - 1], lu = unitOf(last, p);
+  const shelf = s.filter(x => x[5] === 'shelf'), src = shelf.length ? shelf : s, last = src[src.length - 1], lu = unitOf(last, p, key);
   // History in the same unit, ignoring points more than 3× away from today's price (a misread size, not a real price).
-  const since = isoAgo(183), hist = s.filter(x => x[0] >= since).map(x => unitOf(x, p)).filter(v => v && lu && v.b === lu.b && v.u < lu.u * 3 && v.u > lu.u / 3).map(v => v.u);
+  const since = isoAgo(183), hist = s.filter(x => x[0] >= since).map(x => unitOf(x, p, key)).filter(v => v && lu && v.b === lu.b && v.u < lu.u * 3 && v.u > lu.u / 3).map(v => v.u);
   const usual = hist.length >= 3 ? median(hist) : null, off = usual && lu ? 1 - lu.u / usual : null;
   const age = Math.floor((Date.now() - new Date(last[0] + 'T12:00:00')) / 864e5), stale = age > S().staleDays;
   // On sale = (a) the store shows a crossed-out "was" price at least 2% higher, or (b) at least X% under the usual price
@@ -484,7 +529,41 @@ function candidates(i) {
   const c = prodsOf(i).filter(([, p]) => p.status !== 'excluded' && (!exact || p.status === 'preferred')).map(([k, p]) => ({ k, p, q: quote(k) })).filter(c => c.q && c.q.price != null);
   const bases = C(c.map(o => o.q.base).filter(Boolean)), base = Object.keys(bases).sort((a, b) => bases[b] - bases[a])[0] || '';
   c.forEach(o => { o.cmp = base && o.q.base === base ? o.q.unit : null; });
-  return c.sort((a, b) => (a.cmp == null) - (b.cmp == null) || (a.cmp != null ? a.cmp - b.cmp : a.q.price - b.q.price));
+  return c.sort(byValue);
+}
+// Cheapest first by unit price; when two unit prices are within 2% of each other, the lower shelf price first
+// (3,00 $ and 2,97 $ for the same price per kg: 2,97 $).
+function byValue(a, b) {
+  if ((a.cmp == null) !== (b.cmp == null)) return a.cmp == null ? 1 : -1;
+  if (a.cmp == null || Math.abs(a.cmp - b.cmp) <= 0.02 * Math.min(a.cmp, b.cmp)) return a.q.price - b.q.price;
+  return a.cmp - b.cmp;
+}
+// ---- look-alikes: products the extension saw (catalog, not linked to any item) that seem to be this item ----
+// Used when an item has fewer than 2 options, or none at one store. You confirm (✓) or reject (✕) each one.
+const pwords = p => { let s = pwords.c.get(p); if (!s) { s = new Set(words(pname(p) + ' ' + (p.size || '')).map(stem)); pwords.c.set(p, s); } return s; };
+pwords.c = new WeakMap();
+function lookalikes(i) {
+  const x = it(i), r = x.rule, strict = r && ((r.all || []).length || (r.any || []).length), no = new Set(x.no || []);
+  const noun = words(x.name.split(',')[0]).map(stem), quals = words(x.name.split(',').slice(1).join(' ')).map(stem).filter(w => !VSTOP.has(w));
+  const bs = C(candidates(i).map(o => o.q.base).filter(Boolean)), base = Object.keys(bs).sort((a, b) => bs[b] - bs[a])[0] || '';
+  const out = [];
+  Object.entries(CATALOG).forEach(([k, p]) => {
+    if (no.has(k) || p.item) return;
+    const ws = pwords(p);
+    if (strict ? !ruleMatch(r, p) : !noun.every(w => ws.has(w)) || (r && ruleExcl(r, p))) return;
+    const q = quote(k); if (!q || q.price == null || q.gone) return;
+    const nm = words(p.name.split(/,| - /)[0]).map(stem).filter(w => !/^\d/.test(w) && !['g', 'kg', 'ml'].includes(w)), last = nm.lastIndexOf(noun[noun.length - 1]);
+    // Closer = more of the item's qualifiers, the item's noun at the end of the name ("Liquid Honey", not "Honey Mustard"),
+    // sold in the same unit as the item's products (kg, L, each…), shorter name; then the cheapest.
+    const score = quals.filter(w => ws.has(w)).length * 10 + (last === nm.length - 1 ? 10 : last === nm.length - 2 ? 3 : 0)
+      - (base && q.base !== base ? 20 : 0) - nm.length;
+    out.push({ k, p, q, sug: true, score });
+  });
+  return out.sort((a, b) => b.score - a.score || (a.q.base === b.q.base && a.q.unit != null && b.q.unit != null ? a.q.unit - b.q.unit : a.q.price - b.q.price));
+}
+function linkTo(i, k) {
+  const p = CATALOG[k]; if (!p) return;
+  DB.products[k] = Object.assign({}, p, { item: i, status: 'ok', n: 0, n12: 0, last: '' }); delete CATALOG[k]; saveLocal();
 }
 function C(arr) { const o = {}; arr.forEach(v => { o[v] = (o[v] || 0) + 1; }); return o; }
 // ---- "kind" of a product inside an item (apple variety, yogurt flavour, type of cookie) ----
@@ -545,7 +624,14 @@ function propose(i, qty) {
   const out = {}; for (let n = 0; n < qty; n++) { const o = pool[n % pool.length]; out[o.k] = (out[o.k] || 0) + 1; }
   return out;
 }
-const planOf = (i, qty) => i in PL() ? PL()[i] : propose(i, qty);   // a manual choice (even "none") wins over the proposal
+// A manual choice (even "none") wins over the proposal. Products since moved to another item no longer count
+// (otherwise they stay on the list under the old item, unseen in Compare); if that leaves nothing, back to the proposal.
+function manualOf(i) {
+  if (!(i in PL())) return null;
+  const raw = PL()[i], ok = Object.fromEntries(Object.entries(raw).filter(([k]) => DB.products[k] && DB.products[k].item === i));
+  return Object.keys(raw).length && !Object.keys(ok).length ? null : ok;
+}
+const planOf = (i, qty) => manualOf(i) || propose(i, qty);
 const fmtU = q => q && q.unit != null ? money(q.unit) + '/' + q.base : '';
 
 // ---- import an export of the extension: new prices for known products, unknown ones go to the local catalog ----
@@ -569,6 +655,7 @@ function importExtension(o) {
     const q = l.weightKg ? 1 : (l.qty || 1);
     if (l.paid != null) point(k, l.weightKg ? [od.orderDate, l.paid, l.pricePerKg || +(l.paid / l.weightKg).toFixed(3), 'kg', l.wasPrice, 'order'] : [od.orderDate, +(l.paid / q).toFixed(2), null, '', l.wasPrice, 'order']);
   }));
+  sizeOf.c = new WeakMap(); pwords.c = new WeakMap();   // sizes and names may have changed
   const rr = applyRules();   // your item rules add the new matching products right away
   savePrices(); saveLocal(); save();
   return pts + ' new price points · ' + upd + ' known products updated · ' + cat + ' new products put aside' + (rr.linked ? ', of which ' + rr.linked + ' added to items by your rules' : '') + '.';
@@ -594,6 +681,66 @@ function importFromExtension() {
     .then(() => draw());
 }
 
+// ---- Free choice: something on no list this week (a steak…). Search every product ever seen, compare, add. ----
+// The chosen ones (DB.free, synced) go into the baskets and the List; "New week" clears them. Searches aren't kept.
+let FREEQ = '';
+const FREE = () => DB.free || (DB.free = {});
+const storeSearch = (store, q) => store === 'Maxi' ? 'https://www.maxi.ca/en/search?search-bar=' + encodeURIComponent(q) : 'https://www.walmart.ca/en/search?q=' + encodeURIComponent(q);
+function freeResults(q) {
+  const ws = words(q).map(stem); if (!ws.length) return [];
+  const out = [];
+  [[DB.products, false], [CATALOG, true]].forEach(([src]) => Object.entries(src).forEach(([k, p]) => {
+    if (p.status === 'excluded' || !ws.every(w => pwords(p).has(w))) return;
+    const qt = quote(k); if (!qt || qt.price == null || qt.gone) return;
+    // Relevance: the searched word ends the product's name ("Beef Striploin Steak", not "Steak Seasoning" or dog food), short names first.
+    const nm = words(p.name.split(/,| - | – /)[0]).map(stem).filter(w => !/^\d/.test(w)), lw = ws[ws.length - 1];
+    const score = (nm[nm.length - 1] === lw ? 10 : 0) + (ws.every(w => nm.includes(w)) ? 5 : 0) - nm.length;
+    out.push({ k, p, q: qt, score });
+  }));
+  const best = Math.max(...out.map(o => o.score)), top = o => o.score >= best - 6;
+  const bases = C(out.filter(top).map(o => o.q.base).filter(Boolean)), base = Object.keys(bases).sort((a, b) => bases[b] - bases[a])[0] || '';
+  out.forEach(o => { o.cmp = base && o.q.base === base ? o.q.unit : null; });
+  // The closest matches, cheapest first; the others after.
+  return out.sort((a, b) => (top(b) - top(a)) || (top(a) ? byValue(a, b) : b.score - a.score));
+}
+function vFree(basket) {
+  const box = $('div'), fr = FREE();
+  box.append($('div', { style: 'border-top:3px solid var(--ac);margin:26px 0 4px' }), $('h3', { textContent: 'Free choice — anything else this week' }),
+    $('p', { className: 'm', textContent: 'Something on none of your lists (a steak, a treat…): type it, compare, add with +. Only for this week.' }));
+  const inp = $('input', { type: 'search', value: FREEQ, placeholder: 'e.g. steak, ketchup, sushi rice', style: 'flex:1;min-width:180px' });
+  box.append($('form', { className: 'row', onsubmit: e => { e.preventDefault(); FREEQ = inp.value.trim(); draw(); } }, inp, $('button', { className: 'pri', textContent: 'Compare' }),
+    FREEQ ? $('button', { type: 'button', className: 'sm', textContent: 'Clear', onclick: () => { FREEQ = ''; draw(); } }) : ''));
+  const set = (o, n) => { if (n > 0) fr[o.k] = { n, name: pname(o.p), store: o.p.store, url: purl(o.p), price: o.q.price }; else delete fr[o.k]; save(); draw(); };
+  const row = (o, n) => $('div', { className: 'opt' + (n ? '' : ' off') }, $('span', { className: 'st ' + o.p.store[0], textContent: o.p.store }),
+    $('div', { className: 'pn' }, plink(o.p), o.p.size ? $('span', { className: 'old', textContent: ' · ' + o.p.size }) : '',
+      o.q.onSale ? $('span', { className: 'deal', textContent: ' on sale ' + o.q.saleText }) : '',
+      $('div', { className: 'old', textContent: (o.q.src === 'order' ? 'paid ' : 'seen ') + o.q.date + (o.q.stale ? ' (old price)' : '') })),
+    $('div', { className: 'num', textContent: money(o.q.price) }), $('div', { className: 'num u', textContent: fmtU(o.q) }),
+    $('div', { className: 'step' }, $('button', { textContent: '−', onclick: () => set(o, n - 1) }), $('b', { textContent: n }), $('button', { textContent: '+', onclick: () => set(o, n + 1) })));
+  if (FREEQ) {
+    const res = freeResults(FREEQ), card = $('div', { className: 'card' }, $('div', { className: 'ihead' }, $('div', { className: 'nm', textContent: '« ' + FREEQ + ' »' }), $('span', { className: 'm', textContent: res.length + ' product(s) found' })));
+    let show = res.slice(0, 8);
+    ['Walmart', 'Maxi'].forEach(s => { if (!show.some(o => o.p.store === s)) { const o = res.find(o => o.p.store === s); if (o) show.push(o); } });
+    show.forEach(o => card.append(row(o, (fr[o.k] || {}).n || 0)));
+    ['Walmart', 'Maxi'].filter(s => !res.some(o => o.p.store === s)).forEach(s => card.append($('p', { className: 'm', textContent: 'No option at ' + s + ' yet.' })));
+    // Few results or old prices: open the stores' searches; the extension reads the prices as the pages open; then import.
+    const fresh = res.filter(o => !o.q.stale).length;
+    card.append($('div', { className: 'row', style: 'margin-top:8px' },
+      $('span', { className: res.length < 3 || fresh < 3 ? 'w' : 'm', textContent: res.length < 3 || fresh < 3 ? 'Few recent prices: search the stores, let the pages load (the extension reads them), then import.' : 'More choice or newer prices?' }),
+      $('button', { className: 'sm', textContent: 'Search at Maxi', onclick: () => window.open(storeSearch('Maxi', FREEQ), '_blank', 'noopener') }),
+      $('button', { className: 'sm', textContent: 'Search at Walmart', onclick: () => window.open(storeSearch('Walmart', FREEQ), '_blank', 'noopener') }),
+      EXT ? $('button', { className: 'sm pri', textContent: 'Import prices from the extension', onclick: importFromExtension } ) : ''));
+    box.append(card);
+  }
+  // What's chosen (whatever the current search).
+  const chosen = Object.entries(fr);
+  if (chosen.length) box.append($('div', { className: 'card' }, $('b', { textContent: 'Chosen this week' }), ...chosen.map(([k, f]) => {
+    const p = DB.products[k] || CATALOG[k] || { store: f.store, name: f.name, id: '', url: f.url }, qt = quote(k) || { price: f.price, date: '', src: '' };
+    basket[f.store].push({ i: 'free:' + k, k, p, n: f.n, q: qt });
+    return row({ k, p, q: qt }, f.n);
+  })));
+  return box;
+}
 function vCompare() {
   const v = $('div'), rows = listRows(true), st = S();
   const file = $('input', { type: 'file', accept: '.json,application/json', onchange: async e => { const f = e.target.files[0]; if (!f) return; try { MSG = importExtension(JSON.parse(await f.text())); } catch (er) { MSG = 'That file could not be read: ' + er.message; } draw(); } });
@@ -601,7 +748,11 @@ function vCompare() {
   v.append($('div', { className: 'card' },
     $('div', { className: 'bar' }, $('b', { textContent: 'Prices up to ' + (newest || '—') + ' · ' + Object.keys(PRICES).length + ' products with prices' }),
       EXT ? $('button', { className: 'pri', textContent: 'Import prices from the extension', title: 'Extension ' + EXT.version + ' found in this browser', onclick: importFromExtension }) : '',
-      $('label', { className: 'm' }, EXT ? 'or from a file: ' : 'Update from an extension export (file): ', file)),
+      $('label', { className: 'm' }, EXT ? 'or from a file: ' : 'Update from an extension export (file): ', file),
+      // New week: forget last week's choices and start again from the current counts and prices.
+      $('button', { className: 'sm', textContent: 'New week — start over', title: 'Clears the choices, extras, deal add-ons, free choices and List ticks. Counts stay.',
+        onclick: () => { if (!confirm('Start a new week?\n\nClears this week\'s choices in Compare, the extras, the deal add-ons (+1), the free choices and the ticks on the List. Your counts stay: Compare proposes again from them and the latest prices.')) return;
+          DB.plan = {}; DB.extra = {}; DB.checked = {}; DB.free = {}; delete DB.picks; SHOWGONE.clear(); FREEQ = ''; MSG = 'New week: proposals made again from your current counts.'; save(); draw.last = null; draw(); } })),
     $('div', { className: 'row m' }, 'Variety: options up to ', $('input', { type: 'number', min: 0, max: 100, value: Math.round(st.varietyGap * 100), style: 'width:70px;flex:none', onchange: e => { DB.settings = Object.assign({}, DB.settings, { varietyGap: (+e.target.value || 0) / 100 }); save(); draw(); } }),
       '% above the best price · a deal = ', $('input', { type: 'number', min: 0, max: 100, value: Math.round(st.dealGap * 100), style: 'width:70px;flex:none', onchange: e => { DB.settings = Object.assign({}, DB.settings, { dealGap: (+e.target.value || 0) / 100 }); save(); draw(); } }),
       '% under the usual price'),
@@ -615,7 +766,7 @@ function vCompare() {
 
   // One card per item. q = quantity wanted (0 for extras: you add what you want with +).
   const itemCard = (i, q, extra) => {
-    const x = it(i), mode = modeOf(x), cs = candidates(i), plan = planOf(i, q), manual = i in PL();
+    const x = it(i), mode = modeOf(x), cs = candidates(i), plan = planOf(i, q), manual = manualOf(i) != null;
     const chosen = Object.values(plan).reduce((s, n) => s + n, 0);
     if (chosen) picks[i] = plan;
     const setPlan = (k, n) => { const p = Object.assign({}, planOf(i, q)); if (n > 0) p[k] = n; else delete p[k]; PL()[i] = p; save(); draw(); };
@@ -627,6 +778,7 @@ function vCompare() {
     }
     const card = $('div', { className: 'card' },
       $('div', { className: 'ihead' }, $('div', { className: 'qty', textContent: extra ? (chosen || '') : q }), $('div', { className: 'nm', textContent: x.name }),
+        $('span', { className: 'have', title: 'In the house now (last counts) · wanted', textContent: 'have ' + have(i) + (total(i) ? ' of ' + total(i) : '') }),
         $('select', { onchange: e => { const m = e.target.value; if (m === 'exact') x.match = 'preferred'; else { x.match = 'any'; x.choice = m; } delete PL()[i]; save(); draw(); } },
           ...[['cheapest', 'Cheapest'], ['variety', 'Variety'], ['exact', 'Exactly this one']].map(([val, l]) => $('option', { value: val, textContent: l, selected: mode === val }))),
         !extra && manual ? $('button', { className: 'sm', textContent: 'Back to proposal', onclick: () => { delete PL()[i]; save(); draw(); } }) : '',
@@ -644,22 +796,35 @@ function vCompare() {
       order = heads.concat(avail.filter(o => !heads.includes(o)));
     }
     const openGone = SHOWGONE.has(i);
-    const show = order.filter((o, n) => n < 5 || plan[o.k]).concat(gone.filter(o => openGone || plan[o.k]));
+    let show = order.filter((o, n) => n < 5 || plan[o.k]);
+    // Always one option at each store and at least 2 options: the next ones of that store, else look-alikes
+    // (products seen by the extension but not linked yet) that you confirm ✓ or reject ✕. Not in "Exactly this one".
+    const sugs = mode === 'exact' ? [] : lookalikes(i), none = [], base = (avail.find(o => o.cmp != null) || { q: {} }).q.base;
+    sugs.forEach(o => { o.cmp = base && o.q.base === base ? o.q.unit : null; });
+    ['Walmart', 'Maxi'].forEach(s => { if (show.some(o => o.p.store === s)) return; const o = order.find(o => o.p.store === s) || sugs.find(o => o.p.store === s); if (o) show.push(o); else none.push(s); });
+    for (const o of order.concat(sugs)) { if (show.length >= 2) break; if (!show.includes(o)) show.push(o); }
+    if (mode !== 'variety') show.sort(byValue);
+    show = show.concat(gone.filter(o => openGone || plan[o.k]));
     show.forEach(o => {
       const n = plan[o.k] || 0, qt = o.q;
       if (n) basket[o.p.store].push({ i, k: o.k, p: o.p, n, q: qt });
-      card.append($('div', { className: 'opt' + (n ? '' : ' off') },
+      card.append($('div', { className: 'opt' + (n ? '' : ' off') + (o.sug ? ' sug' : '') },
         $('span', { className: 'st ' + o.p.store[0], textContent: o.p.store }),
         $('div', { className: 'pn' }, o.p.status === 'preferred' ? '★ ' : '', plink(o.p),
           o.p.size ? $('span', { className: 'old', textContent: ' · ' + o.p.size }) : '',
           qt.onSale ? $('span', { className: 'deal', textContent: ' on sale ' + qt.saleText }) : '',
-          $('div', { className: qt.gone ? 'w' : 'old', textContent: (qt.gone ? 'not seen since ' + qt.seen + ' — maybe no longer sold · ' : '') + (qt.src === 'order' ? 'paid ' : 'seen ') + qt.date + (qt.stale && !qt.gone ? ' (old price)' : '') + (qt.usual ? ' · usual ' + money(qt.usual) + '/' + qt.base : '') }),
-          $('span', { className: 'mini' }, $('button', { textContent: o.p.status === 'preferred' ? '★ preferred' : '☆', title: 'Preferred product', onclick: () => { o.p.status = o.p.status === 'preferred' ? 'ok' : 'preferred'; save(); draw(); } }),
+          $('div', { className: qt.gone ? 'w' : 'old', textContent: (o.sug ? 'new — is it a « ' + x.name + ' »? · ' : '') + (qt.gone ? 'not seen since ' + qt.seen + ' — maybe no longer sold · ' : '') + (qt.src === 'order' ? 'paid ' : 'seen ') + qt.date + (qt.stale && !qt.gone ? ' (old price)' : '') + (qt.usual ? ' · usual ' + money(qt.usual) + '/' + qt.base : '') }),
+          o.sug ? $('span', { className: 'mini' },
+            $('button', { textContent: '✓ Yes, add it to this item', onclick: () => { linkTo(i, o.k); save(); draw(); } }),
+            $('button', { textContent: '✕ Not this item', onclick: () => { x.no = (x.no || []).concat(o.k); save(); draw(); } }))
+          : $('span', { className: 'mini' }, $('button', { textContent: o.p.status === 'preferred' ? '★ preferred' : '☆', title: 'Preferred product', onclick: () => { o.p.status = o.p.status === 'preferred' ? 'ok' : 'preferred'; save(); draw(); } }),
             $('button', { textContent: 'Never this one', onclick: () => { if (confirm('Exclude "' + pname(o.p) + '" from future comparisons?')) { o.p.status = 'excluded'; if (PL()[i]) delete PL()[i][o.k]; save(); draw(); } } }))),
         $('div', { className: 'num', textContent: money(qt.price) }),
         $('div', { className: 'num u', textContent: fmtU(qt) }),
-        $('div', { className: 'step' }, $('button', { textContent: '−', onclick: () => setPlan(o.k, n - 1) }), $('b', { textContent: n }), $('button', { textContent: '+', onclick: () => setPlan(o.k, n + 1) }))));
+        $('div', { className: 'step' }, $('button', { textContent: '−', onclick: () => setPlan(o.k, n - 1) }), $('b', { textContent: n }),
+          $('button', { textContent: '+', onclick: () => { if (o.sug) linkTo(i, o.k); setPlan(o.k, n + 1); } }))));
     });
+    if (none.length) card.append($('p', { className: 'm', textContent: none.map(s => 'No option at ' + s + '.').join(' ') }));
     const hiddenAvail = order.filter(o => !show.includes(o)).length;
     if (hiddenAvail) card.append($('div', { className: 'm', textContent: hiddenAvail + ' more option(s), more expensive.' }));
     const hiddenGone = gone.filter(o => !show.includes(o)).length;
@@ -683,14 +848,21 @@ function vCompare() {
   if (deals.length) {
     v.append($('div', { style: 'border-top:3px solid var(--low);margin:26px 0 4px' }),
       $('h3', { textContent: 'On sale now — stock up?' }),
-      $('p', { className: 'm', textContent: 'Your staples and "only on sale" items at least ' + Math.round(st.dealGap * 100) + '% off this week, whether you need them or not. "Add" puts extra ones on the list, on top of what the count asks for.' }));
+      $('p', { className: 'm', textContent: 'Your staples and "only on sale" items at least ' + Math.round(st.dealGap * 100) + '% off this week, whether you need them or not. +1 puts one more on the list, on top of what the count asks for.' }));
     deals.forEach(({ i, c }) => {
-      const x = it(i), tot = total(i), hv = have(i), on = DB.extra[i] > 0, add = x.follow === 'deal' ? Math.max(1, tot - hv) : Math.max(1, tot || 1);
+      const x = it(i), tot = total(i), hv = have(i), ex = DB.extra[i] || 0;
+      const planned = Object.values(picks[i] || {}).reduce((s, n) => s + n, 0);
+      // +1 / −1: one more (or one less) of the deal product, on top of what the count asks for. A manual choice
+      // above gets the same change, so the item card and the baskets follow.
+      const bump = d => { const n = Math.max(0, ex + d); if (n) DB.extra[i] = n; else delete DB.extra[i];
+        const m = manualOf(i); if (m) { const k = (m[c.k] || 0) + d; if (k > 0) m[c.k] = k; else delete m[c.k]; PL()[i] = m; }
+        save(); draw(); };
       v.append($('div', { className: 'card bar' }, $('b', { textContent: x.name }),
-        $('span', { className: 'm', textContent: 'have ' + hv + (tot ? ' of ' + tot : '') + (need(i) > 0 && x.follow === 'normal' ? ' · on the list' : '') }),
+        $('span', { className: 'have', textContent: 'have ' + hv + (tot ? ' of ' + tot : '') }),
         $('span', { className: 'st ' + c.p.store[0], textContent: c.p.store }),
         $('span', {}, plink(c.p), ' — ' + money(c.q.price) + ' '), $('span', { className: 'deal', textContent: c.q.saleText }),
-        $('button', { className: on ? 'sm' : 'sm pri', textContent: on ? 'Remove the extra ' + DB.extra[i] : 'Add ' + add, onclick: () => { if (on) delete DB.extra[i]; else DB.extra[i] = add; save(); draw(); } }),
+        $('span', { className: 'm', title: 'Everything planned for this item this week, the list above included', textContent: 'planned this week: ' + planned + (ex ? ' (' + ex + ' extra)' : '') }),
+        $('span', { className: 'step' }, $('button', { textContent: '−1', disabled: !ex, title: 'One less', onclick: () => bump(-1) }), $('button', { textContent: '+1', title: 'One more, on top of the list', onclick: () => bump(1) })),
         $('button', { className: 'sm', textContent: 'Not for this item', title: 'Never show this item in "On sale now" (can be turned back on in Organize)', onclick: () => { x.dealAlert = false; save(); draw(); } })));
     });
   }
@@ -708,6 +880,8 @@ function vCompare() {
   if (JSON.stringify(picks) !== JSON.stringify((DB.picks || {}).items || {}) || JSON.stringify(skipped) !== JSON.stringify((DB.picks || {}).skipped || [])) {
     DB.picks = { at: Date.now(), items: picks, skipped }; save();
   }
+
+  v.append(vFree(basket));
 
   v.append($('div', { style: 'border-top:3px solid var(--ac);margin:26px 0 4px' }));
   // The two baskets.
@@ -924,6 +1098,14 @@ const FIXES = {
     mergeItems(old, 'pork-roast');
     it('pork-roast').rule = { all: ['pork'], any: ['roast', 'tenderloin', 'loin', 'shoulder', 'butt', 'sirloin'],
       none: ['chop', 'ground', 'rib', 'sausage', 'bacon', 'ham', 'cutlet', 'schnitzel', 'belly', 'hock', 'kabob', 'souvlaki', 'strip', 'cube', 'broth', 'rind', 'jerky'] }; },
+  // 2026-11-16 — canned corn: cans only (341/398 ml). The 750 g / 500 g / 2 kg "Whole Kernel Corn" bags are frozen corn.
+  'corn-canned-cans': () => { const i = 'corn-canned', fz = 'vegetables-frozen-corn'; if (!it(i)) return;
+    it(i).rule = { all: ['corn'], any: ['kernel', 'niblets', 'cream', 'creamy', 'peaches'], none: ['frozen', 'popping', 'popcorn', 'microwave', 'cob', 'style', '750', '500', 'kg', 'meal', 'flakes', 'chips', 'starch', 'syrup', 'tortilla', 'cereal'] };
+    prodsOf(i).forEach(([, p]) => { if (/\bfrozen\b|\b(750|500)\s*g\b|\b2\s*kg\b/i.test(pname(p) + ' ' + (p.size || ''))) { if (it(fz)) p.item = fz; else p.status = 'excluded'; } }); },
+  // 2026-11-16 — canned tomatoes (crushed or diced): "no salt added" only, plain (no spices, chili, peppers), not the bulk cans.
+  'tomatoes-no-salt': () => { const i = 'tomatoes-crushed-or-diced'; if (!it(i)) return;
+    it(i).rule = { all: ['tomatoes', 'salt'], any: ['crushed', 'diced'], none: ['spices', 'spice', 'spiced', 'spces', 'herbs', 'herb', 'chili', 'chilies', 'pepper', 'italian', 'seasonings', 'stewed', 'bulk', 'case', 'foodservice'] };
+    prodsOf(i).forEach(([, p]) => { if (p.status !== 'excluded' && !ruleMatch(it(i).rule, p)) p.status = 'excluded'; }); },
 };
 function applyFixes() {
   if (!Object.keys(DB.items).length) return false;
