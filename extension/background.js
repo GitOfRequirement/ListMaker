@@ -46,10 +46,11 @@ async function notInList({ store, listName, minTimes = 2, months = 12 }) {
   const all = await chrome.storage.local.get(null);
   const since = day(-Math.round(months * 30.4)), want = String(listName || '').trim().toLowerCase(), month = day(-30);
   // Walmart: a product on "My Items" is covered too (that page is re-read every week anyway).
-  const ok = store === 'Walmart' ? [want, 'my items'] : [want];
+  // Maxi: any list of the set ListMaker, ListMaker 2, ListMaker 3… (100 products per list).
+  const set = P.listSet(listName), ok = n => set.has(n) || (store === 'Walmart' && n.trim().toLowerCase() === 'my items');
   const inList = new Set(), counts = new Map();
   for (const [k, v] of Object.entries(all)) {
-    if (k.startsWith('p:') && v.store === store && (v.inLists || []).some(n => ok.includes(n.trim().toLowerCase())))
+    if (k.startsWith('p:') && v.store === store && (v.inLists || []).some(ok))
       [v.productId, ...(v.altIds || [])].forEach(id => inList.add(id));
     if (!k.startsWith('m:' + store + ':')) continue;
     const id = k.split(':').slice(2).join(':');

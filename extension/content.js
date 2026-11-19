@@ -144,36 +144,51 @@
       .some(e => e && (e.getAttribute('data-track-products-array') || '').includes(p.sku));
     // Always look the group up again: the page re-draws it after a click, and an old copy never changes.
     const findGroup = () => [...document.querySelectorAll('.product-button-group')].find(g => g.querySelector('.add-to-list-button') && mine(g));
-    const want = String(p.list || '').trim().toLowerCase();
-    const entry = () => { const g = findGroup(); return g && [...g.querySelectorAll('.shopping-list-button')].find(b => clean(b.textContent).toLowerCase() === want); };
+    // Maxi lists hold 100 products, and a full list ignores the click without a word. So "ListMaker" is a set:
+    // ListMaker, ListMaker 2, ListMaker 3… (create them on Maxi). In one of them = in the list; new products go
+    // to the first one that is not full.
+    const set = P.listSet(p.list);
+    const entries = () => { const g = findGroup(); return g ? [...g.querySelectorAll('.shopping-list-button')].map(b => ({ b, name: clean(b.textContent) })).filter(e => set.has(e.name)).sort((a, b) => set.rank(a.name) - set.rank(b.name)) : []; };
+    const entry = name => entries().find(e => e.name === name);
     const open = async () => {
       const g = findGroup(); if (!g) return;
       if (!g.querySelector('.add-to-list--active')) g.querySelector('.add-to-list-button').click();   // a second click would close it
-      await sleep(800); for (let i = 0; i < 12 && !entry(); i++) await sleep(400);
+      await sleep(800); for (let i = 0; i < 12 && !entries().length; i++) await sleep(400);
     };
     for (let i = 0; i < 30 && !findGroup(); i++) await sleep(500);
-    if (!findGroup()) return 'no-button';
+    if (!findGroup()) return { r: 'no-button' };
     await open();
-    const b = entry();
-    if (!b) return 'list-not-found';
-    if (/--with-product/.test(b.className)) return 'already';
+    const es = entries();
+    if (!es.length) return { r: 'list-not-found' };
+    const inOne = es.find(e => /--with-product/.test(e.b.className));
+    if (inOne) return { r: 'already', list: inOne.name };
     // Click only when the menu clearly says "not in this list": the entry is a toggle, a click on a product
     // already in the list would remove it.
-    if (!/--without-product/.test(b.className)) return 'unknown-state';
-    b.click();
-    for (let i = 0; i < 20; i++) {
-      await sleep(400);
-      const e = entry();
-      if (e && /--with-product/.test(e.className)) return 'added';
-      if (i === 6 || i === 13) await open();   // the menu often closes after an add: re-open it to read the result
+    if (es.some(e => !/--without-product/.test(e.b.className))) return { r: 'unknown-state' };
+    const full = (await chrome.storage.local.get('fullLists')).fullLists || {}, now = Date.now();
+    for (const { name } of es) {
+      if (full[name] > now) continue;   // known to be full (rechecked after 14 days: you may have removed some)
+      const e = entry(name); if (!e) continue;
+      e.b.click();
+      for (let i = 0; i < 20; i++) {
+        await sleep(400);
+        const x = entry(name);
+        if (x && /--with-product/.test(x.b.className)) return { r: 'added', list: name };
+        if (i === 6 || i === 13) await open();   // the menu often closes after an add: re-open it to read the result
+      }
+      // The click changed nothing: this list is full. Remember it, try the next one.
+      full[name] = now + 14 * 864e5; await chrome.storage.local.set({ fullLists: full });
+      say(`⚠ La liste « ${name} » semble pleine (100 produits). Essai dans la suivante…`);
+      await open();
     }
-    return 'not-confirmed';
+    return { r: 'list-full', list: clean(p.list) + ' ' + (Math.max(...es.map(e => set.rank(e.name))) + 1) };
   }
 
   async function finishMaxiAdd(p) {
     say(`Ajout de « ${p.name} » à la liste « ${p.list} »…`);
-    const r = await addMaxiList(p);
-    const words = { added: '✓ Ajouté à la liste', already: '✓ Déjà dans la liste', 'unknown-state': '⚠ État du menu illisible (rien cliqué)','list-not-found': `⚠ Liste « ${p.list} » introuvable dans le menu`, 'no-button': '⚠ Bouton « Add to List » introuvable', 'not-confirmed': '⚠ Ajout non confirmé' };
+    const { r, list } = await addMaxiList(p);
+    const words = { added: `✓ Ajouté à « ${list} »`, already: `✓ Déjà dans « ${list} »`, 'unknown-state': '⚠ État du menu illisible (rien cliqué)', 'list-not-found': `⚠ Liste « ${p.list} » introuvable dans le menu`,
+      'no-button': '⚠ Bouton « Add to List » introuvable', 'not-confirmed': '⚠ Ajout non confirmé', 'list-full': `⚠ Toutes les listes « ${p.list} » sont pleines : créez « ${list} » sur Maxi` };
     say(`${words[r] || r} : ${p.name}.`);
     await batchNext(true, { productId: p.sku, store: 'Maxi', foundName: p.name, listResult: r });
   }

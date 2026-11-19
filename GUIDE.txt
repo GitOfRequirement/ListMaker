@@ -23,7 +23,8 @@ CHAQUE SEMAINE
 
 2. METTRE LES PRIX À JOUR (ordinateur, Chrome)
    - walmart.ca > My Items : cliquer « Tout lire » dans l'encadré vert.
-   - maxi.ca > votre liste ListMaker : « Tout lire ».
+   - maxi.ca > vos listes ListMaker, ListMaker 2… : « Tout lire » sur
+     chacune (Maxi limite une liste à 100 produits).
    - (facultatif) Maxi > All Deals, Walmart > Weekly Flyer : « Tout lire ».
    - Dans l'app, onglet Compare : « Import prices from the extension ».
 

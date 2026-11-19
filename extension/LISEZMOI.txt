@@ -80,6 +80,13 @@ qu'une seule lecture de liste donne tous les prix.
       compte « est-ce dans la liste ? ».
    3. À la fin, refaites « Tout lire » sur la liste : le bouton doit
       indiquer « complète » (sauf les produits introuvables).
+   LIMITE MAXI : une liste contient 100 produits au maximum, et une liste
+   pleine ignore l'ajout sans rien dire. Créez sur Maxi « ListMaker 2 »
+   (puis « ListMaker 3 »…) : l'extension considère toutes ces listes comme
+   « ListMaker » et ajoute dans la première qui a de la place. Une liste
+   trouvée pleine est notée pendant 14 jours (visible dans l'icône Pantry).
+   Si toutes sont pleines, le bilan dit « list-full » : créez la suivante.
+   Chaque semaine, faites « Tout lire » sur CHACUNE de ces listes.
 
 
 2b) Les produits manquants
@@ -104,7 +111,7 @@ Ensuite, cliquez l'icône Pantry, section « Produits manquants » :
    - Les non-trouvés (produit retiré, nom différent) sont réessayés dans
      30 jours.
 Résultat : ensuite, chaque semaine, il suffit de « Tout lire » sur My Items
-(Walmart) et sur ListMaker (Maxi) pour avoir tous les prix à jour.
+(Walmart) et sur ListMaker, ListMaker 2… (Maxi) pour avoir tous les prix à jour.
 
 
 3) Envoyer les prix à l'app

@@ -71,7 +71,10 @@ async function render() {
   add.onchange = () => { st.addToList = add.checked; save(); };
   const ln = document.createElement('input'); ln.type = 'text'; ln.value = st.listName || 'ListMaker'; ln.style.width = '110px';
   ln.onchange = () => { st.listName = ln.value.trim() || 'ListMaker'; save(); };
+  // Maxi lists hold 100 products: "ListMaker" also covers ListMaker 2, ListMaker 3… (created by hand on Maxi).
+  const full = Object.entries((await chrome.storage.local.get('fullLists')).fullLists || {}).filter(([, t]) => t > Date.now()).map(([n]) => n);
   head.append(row('Achetés dans les : ', months), row(add, ' ajouter les produits trouvés à une liste'), row('Liste Maxi : ', ln),
+    Object.assign(document.createElement('div'), { className: 'm', textContent: `Maxi : 100 produits maximum par liste. Créez « ${st.listName || 'ListMaker'} 2 », « … 3 » sur Maxi : l'extension remplit la première qui a de la place.` + (full.length ? ` Pleines : ${full.join(', ')}.` : '') }),
     Object.assign(document.createElement('div'), { className: 'm', textContent: 'Walmart : liste Favourites (cœur). Ajout seulement, jamais de retrait ni de panier.' }));
   mbox.append(head);
 

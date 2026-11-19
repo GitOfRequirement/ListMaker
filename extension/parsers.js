@@ -379,5 +379,13 @@
 
   function forUrl(url) { return /walmart\.ca/.test(url) ? walmart : /maxi\.ca/.test(url) ? maxi : null; }
 
-  root.PantryParsers = { walmart, maxi, forUrl, money, unitPrice, parseFullDate, parseMonthDay };
+  // "ListMaker" stands for the set ListMaker, ListMaker 2, ListMaker 3… (a Maxi list holds 100 products).
+  // rank("ListMaker") = 1, rank("ListMaker 2") = 2, any other name = 0.
+  function listSet(base) {
+    const low = String(base || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const rank = n => { const s = String(n || '').replace(/\s+/g, ' ').trim().toLowerCase(); if (!low) return 0; if (s === low) return 1;
+      const m = s.startsWith(low) && s.slice(low.length).trim().match(/^#?(\d+)$/); return m && +m[1] > 1 ? +m[1] : 0; };
+    return { has: n => rank(n) > 0, rank };
+  }
+  root.PantryParsers = { walmart, maxi, forUrl, money, unitPrice, parseFullDate, parseMonthDay, listSet };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
